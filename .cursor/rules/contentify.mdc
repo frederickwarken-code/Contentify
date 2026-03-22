@@ -1,0 +1,31 @@
+---
+description: Content Map / Contentify – Projekt & Arbeitsweise
+alwaysApply: true
+---
+
+# Wer & wie kommunizieren
+
+- **Frederick**: Marketer/Videograph, kein Entwickler. Konzepte und Code-Änderungen **in einfachen Worten** erklären.
+- **Vor jeder Code-Änderung** kurz sagen: was geplant ist und **warum**. Danach wieder einfach zusammenfassen.
+- **Bugfixes**: Zuerst erklären, **warum** der Fehler vermutlich dort liegt. **Keine** großen Pakete von Änderungen auf einmal.
+- Vor **größeren** Schritten an **Git-Commit** erinnern.
+
+# Produkt: Content Map (Contentify)
+
+- Web-App als **Microsoft Teams**-App geplant: Tabs **Content-Bibliothek (Tabelle)**, **Kanban**, **visuelle Link-Map**; eigene Kategorien; Einträge als **„Idee“** in allen Tabs hervorgehoben.
+- **Frontend**: Single-File-App – `public/index.html` + `public/config.js` (Supabase-Client).
+- **Backend**: **Supabase** (Auth + DB). **RLS** ist relevant für Sicherheit.
+
+# Repo & Pfade
+
+- **Git- und Cursor-Workspace-Root**: Ordner **`Version 0.2`** (nicht nur `public`), sonst sieht Source Control kein Repo. Remote: GitHub `frederickwarken-code/Contentify`.
+- SQL-Referenz / Migrationen (Schema, Seed, Admin-SQL) liegen bei Bedarf unter `Version 0.1/sql/` (nicht zwingend im gleichen Repo-Pfad).
+
+# Supabase & Secrets
+
+- In `config.js` nur **Project URL** + **Publishable / anon** Key (`sb_publishable_…` oder JWT `eyJ…`). **Niemals** den **Secret / service_role** Key ins Frontend oder öffentliches Repo.
+- Nach neuem Supabase-Projekt: Nutzer in der App anlegen, dann Admin per SQL (`03_admin_email.sql`-Logik) – private Gmail wie vereinbart.
+
+# Technische Ziele (mittelfristig)
+
+- Code verstehen; Single-File später sinnvoll splitten; Redaktionskalender; Teams/Graph; Analytics; Kommentare/Approval; Stripe; AppSource – **nacheinander**, nicht alles auf einmal.
