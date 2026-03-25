@@ -1,3 +1,5 @@
+Aktueller Fokus: (bitte anpassen – z. B. „Code-Durchgang index.html“, „Feature X“)
+
 Phase 0 – Setup (diese Woche)
 •	Privates Microsoft-Konto erstellen – schauen dass wir da eins mit Zugriff auf Apps haben. Evtl. Enterprise paket holen
 •	Privates GitHub-Konto mit privater E-Mail erstellen
