@@ -425,8 +425,18 @@ thead th{position:relative} /* needed for absolute resize handle */
       <button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="openColModal()" title="Kategorien verwalten">⚙️ Kategorien</button>
       <button class="btn-ghost" style="font-size:12px;padding:5px 10px" id="exportBtn">↓ Import/Export</button>
       <button class="btn-primary" style="font-size:12px;padding:5px 11px" id="newBtn" onclick="openNewDrawer()">+ Neuer Inhalt</button>
-      <div class="user-chip" id="userChip" onclick="openAdminPanel()" style="cursor:pointer" title="Nutzerverwaltung (nur Admin)"></div>
-      <button class="btn-icon" onclick="doLogout()" title="Abmelden" style="font-size:11px;color:rgba(255,255,255,.6)">⏻</button>
+      <div class="user-chip" id="userChip" onclick="toggleUserMenu(event)" style="cursor:pointer" title="Profil / Konto"></div>
+      <div id="userMenu" style="display:none;position:absolute;right:12px;top:52px;z-index:80;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);min-width:260px;overflow:hidden">
+        <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted)">
+          <div style="font-weight:600;color:var(--text)" id="userMenuName">Konto</div>
+          <div style="font-size:11px;color:var(--text-faint)" id="userMenuEmail"></div>
+        </div>
+        <div style="padding:8px 0">
+          <button class="btn-ghost" style="width:100%;text-align:left;border:none;border-radius:0;padding:10px 12px" onclick="switchAccount()">🔁 Konto wechseln</button>
+          <button class="btn-ghost" id="adminMenuBtn" style="display:none;width:100%;text-align:left;border:none;border-radius:0;padding:10px 12px" onclick="openAdminPanelFromMenu()">👥 Nutzerverwaltung</button>
+          <button class="btn-ghost" style="width:100%;text-align:left;border:none;border-radius:0;padding:10px 12px;color:var(--red)" onclick="doLogout(true)">⏻ Abmelden</button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -702,13 +712,84 @@ async function doLogin() {
       res = await sb.auth.signInWithPassword({ email, password: pw });
     }
     if (res.error) throw res.error;
+    rememberAccountEmail(email);
   } catch(e) {
     errEl.style.color = 'var(--red)';
     errEl.textContent = e.message === 'Invalid login credentials' ? 'E-Mail oder Passwort falsch.' : e.message;
     setSyncStatus('');
   }
 }
-async function doLogout() { await sb.auth.signOut(); }
+
+function hideUserMenu(){ const m=document.getElementById('userMenu'); if(m) m.style.display='none'; }
+function showUserMenu(){
+  const m = document.getElementById('userMenu');
+  if(!m) return;
+  document.getElementById('userMenuName').textContent = currentProfile?.display_name || 'Konto';
+  document.getElementById('userMenuEmail').textContent = currentProfile?.email || currentUser?.email || '';
+  document.getElementById('adminMenuBtn').style.display = currentProfile?.role === 'admin' ? 'block' : 'none';
+  m.style.display='block';
+}
+function toggleUserMenu(e){
+  e?.stopPropagation?.();
+  const m = document.getElementById('userMenu');
+  if(!m) return;
+  if(m.style.display==='none' || !m.style.display) showUserMenu();
+  else hideUserMenu();
+}
+document.addEventListener('click', (e)=>{
+  const m=document.getElementById('userMenu');
+  const chip=document.getElementById('userChip');
+  if(!m || m.style.display==='none') return;
+  if(m.contains(e.target) || chip?.contains(e.target)) return;
+  hideUserMenu();
+});
+
+function rememberAccountEmail(email){
+  try{
+    if(!email) return;
+    const key='v4q_recent_accounts_v1';
+    const raw=JSON.parse(localStorage.getItem(key)||'[]');
+    const list=Array.isArray(raw)?raw:[];
+    const next=[email, ...list.filter(x=>x!==email)].slice(0,6);
+    localStorage.setItem(key, JSON.stringify(next));
+  }catch{}
+}
+function getRememberedAccounts(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('v4q_recent_accounts_v1')||'[]');
+    return Array.isArray(raw)?raw:[];
+  }catch{ return []; }
+}
+
+function switchAccount(){
+  hideUserMenu();
+  const accounts = getRememberedAccounts();
+  if(accounts.length){
+    document.getElementById('loginEmail').value = accounts[0];
+  }
+  document.getElementById('login-screen').classList.add('visible');
+  document.getElementById('appShell').style.display='none';
+  toast(accounts.length ? 'Konto wechseln: E-Mail ist vorausgefüllt.' : 'Bitte mit anderem Konto anmelden.');
+}
+
+function openAdminPanelFromMenu(){
+  hideUserMenu();
+  openAdminPanel();
+}
+
+async function doLogout(forceReload=false) {
+  hideUserMenu();
+  setSyncStatus('loading', 'Abmelden…');
+  try{
+    const { error } = await sb.auth.signOut();
+    if(error) throw error;
+  }catch(e){
+    toast('Logout-Fehler: ' + (e?.message || e));
+  }finally{
+    setSyncStatus('');
+    if(forceReload) setTimeout(()=>location.reload(), 150);
+  }
+}
 
 // ── ADMIN PANEL ──
 async function openAdminPanel() {
@@ -775,7 +856,7 @@ function renderUserChip() {
     <span style="font-size:12px;color:var(--text-muted);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${currentProfile.display_name || currentProfile.email}</span>
     <span class="role-badge">${currentProfile.role}</span>
     ${isAdmin ? '<span style="font-size:10px;opacity:.7;color:rgba(255,255,255,.7)" title="Nutzerverwaltung öffnen">👥</span>' : ''}`;
-  document.getElementById('userChip').style.cursor = isAdmin ? 'pointer' : 'default';
+  document.getElementById('userChip').style.cursor = 'pointer';
   if (isReadOnly) { document.getElementById('newBtn').disabled = true; }
 }
 
