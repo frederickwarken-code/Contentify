@@ -1,4 +1,4 @@
-Aktueller Fokus: (bitte anpassen – z. B. „Code-Durchgang index.html“, „Feature X“)
+Aktueller Fokus: Code gemeinsam durchgehen – `public/index.html` (und ggf. `config.js`) in einfachen Worten erklären; danach gezielt verbessern/weiterentwickeln.
 
 Phase 0 – Setup (diese Woche)
 •	Privates Microsoft-Konto erstellen – schauen dass wir da eins mit Zugriff auf Apps haben. Evtl. Enterprise paket holen
