@@ -21,6 +21,13 @@ alwaysApply: true
 - **Git- und Cursor-Workspace-Root**: Ordner **`Version 0.2`** (nicht nur `public`), sonst sieht Source Control kein Repo. Remote: GitHub `frederickwarken-code/Contentify`.
 - SQL-Referenz / Migrationen (Schema, Seed, Admin-SQL) liegen bei Bedarf unter `Version 0.1/sql/` (nicht zwingend im gleichen Repo-Pfad).
 
+# Kontext für neue Sessions (damit der Assistent „up to date“ bleibt)
+
+- Bei **größeren** Aufgaben oder Planung: zuerst **`Roadmap.txt`** im Repo-Root lesen (Phasen, Prioritäten).
+- **Haupt-Code der App**: `public/index.html` (Logik + UI), `public/config.js` (Supabase-URL + anon Key).
+- **Deploy (GitHub Pages)**: `.github/workflows/deploy-pages.yml` – Push auf **`main`** triggert Deploy.
+- Optional: Ganz oben in **`Roadmap.txt`** eine Zeile **„Aktueller Fokus:“** pflegen – dann ist der nächste Schritt sofort klar, ohne lange Einleitung im Chat.
+
 # Supabase & Secrets
 
 - In `config.js` nur **Project URL** + **Publishable / anon** Key (`sb_publishable_…` oder JWT `eyJ…`). **Niemals** den **Secret / service_role** Key ins Frontend oder öffentliches Repo.
