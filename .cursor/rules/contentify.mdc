@@ -5,13 +5,14 @@ alwaysApply: true
 
 # Wer & wie kommunizieren
 
-- **Frederick**: Marketer/Videograph, kein Entwickler. Konzepte und Code-Änderungen **in einfachen Worten** erklären.
+- **Frederick**: Marketer/Videograph, **kein Entwickler**; arbeitet **allein** an Contentify als **Nebenprojekt**. Ziel: eine App, die er **Firmen mit kleinen Marketing-Teams** als **Abo-Modell** anbieten kann. Konzepte und Code-Änderungen **in einfachen Worten** erklären (kein Team aus Entwicklern im Hintergrund).
 - **Vor jeder Code-Änderung** kurz sagen: was geplant ist und **warum**. Danach wieder einfach zusammenfassen.
 - **Bugfixes**: Zuerst erklären, **warum** der Fehler vermutlich dort liegt. **Keine** großen Pakete von Änderungen auf einmal.
 - Vor **größeren** Schritten an **Git-Commit** erinnern.
 
 # Produkt: Content Map (Contentify)
 
+- **Geschäftsidee**: B2B-SaaS (Abo) für **kleine Marketing-Teams**; Frederick baut und vertreibt **solo** (Roadmap/Phasen beachten).
 - Web-App als **Microsoft Teams**-App geplant: Tabs **Content-Bibliothek (Tabelle)**, **Kanban**, **visuelle Link-Map**; eigene Kategorien; Einträge als **„Idee“** in allen Tabs hervorgehoben.
 - **Frontend**: Single-File-App – `public/index.html` + `public/config.js` (Supabase-Client).
 - **Backend**: **Supabase** (Auth + DB). **RLS** ist relevant für Sicherheit.
