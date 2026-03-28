@@ -1,4 +1,4 @@
-Aktueller Fokus: Code gemeinsam durchgehen – Root-`index.html`, `src/main.css`, `public/js/app.js`, `public/config.js` in einfachen Worten; danach gezielt verbessern/weiterentwickeln.
+Aktueller Fokus: `public/js/app.js` schrittweise in ES-Module unter `src/` aufteilen (logische Blöcke), an `main.js` anbinden; `onclick`/globale Handler vorerst mit `window` oder nach und nach Event-Listener ersetzen. Zwischendurch immer testen (lokal `npm run dev` unter `/Contentify/` + Deploy prüfen).
 
 Phase 0 – Setup (diese Woche)
 •	Privates Microsoft-Konto erstellen – schauen dass wir da eins mit Zugriff auf Apps haben. Evtl. Enterprise paket holen
