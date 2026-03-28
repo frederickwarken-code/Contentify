@@ -14,7 +14,7 @@ alwaysApply: true
 
 - **Geschäftsidee**: B2B-SaaS (Abo) für **kleine Marketing-Teams**; Frederick baut und vertreibt **solo** (Roadmap/Phasen beachten).
 - Web-App als **Microsoft Teams**-App geplant: Tabs **Content-Bibliothek (Tabelle)**, **Kanban**, **visuelle Link-Map**; eigene Kategorien; Einträge als **„Idee“** in allen Tabs hervorgehoben.
-- **Frontend**: Single-File-App – `public/index.html` + `public/config.js` (Supabase-Client).
+- **Frontend**: `public/index.html` (Markup), `public/css/app.css` (Styles), `public/js/app.js` (App-Logik), `public/config.js` (Supabase-URL + anon Key). CDN: Supabase-JS + d3 im HTML. **Nächster Schritt (optional):** Vite + modulare `src/`-Aufteilung.
 - **Backend**: **Supabase** (Auth + DB). **RLS** ist relevant für Sicherheit.
 
 # Repo & Pfade
@@ -25,7 +25,7 @@ alwaysApply: true
 # Kontext für neue Sessions (damit der Assistent „up to date“ bleibt)
 
 - Bei **größeren** Aufgaben oder Planung: zuerst **`Roadmap.txt`** im Repo-Root lesen (Phasen, Prioritäten).
-- **Haupt-Code der App**: `public/index.html` (Logik + UI), `public/config.js` (Supabase-URL + anon Key).
+- **Haupt-Code der App**: `public/js/app.js` (Logik), `public/index.html` + `public/css/app.css` (UI), `public/config.js` (Supabase-URL + anon Key).
 - **Deploy (GitHub Pages)**: `.github/workflows/deploy-pages.yml` – Push auf **`main`** triggert Deploy.
 - Optional: Ganz oben in **`Roadmap.txt`** eine Zeile **„Aktueller Fokus:“** pflegen – dann ist der nächste Schritt sofort klar, ohne lange Einleitung im Chat.
 
