@@ -1,8 +1,2 @@
-# Lokale Geheimnisse (falls du später .env nutzt)
-.env
-.env.*
-!.env.example
-
-# System
-.DS_Store
-Thumbs.db
+node_modules/
+dist/
