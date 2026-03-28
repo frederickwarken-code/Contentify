@@ -20,14 +20,15 @@ alwaysApply: true
 # Repo & Pfade
 
 - **Git- und Cursor-Workspace-Root**: Ordner **`Version 0.2`** (nicht nur `public`), sonst sieht Source Control kein Repo. Remote: GitHub `frederickwarken-code/Contentify`.
+- **Planung / Überblick (kein App-Code):** Ordner **`docs/`** (`Roadmap.txt`, `README.txt`). **Cursor-Regeln** bleiben unter **`.cursor/rules/`** (von Cursor vorgegeben).
 - SQL-Referenz / Migrationen (Schema, Seed, Admin-SQL) liegen bei Bedarf unter `Version 0.1/sql/` (nicht zwingend im gleichen Repo-Pfad).
 
 # Kontext für neue Sessions (damit der Assistent „up to date“ bleibt)
 
-- Bei **größeren** Aufgaben oder Planung: zuerst **`Roadmap.txt`** im Repo-Root lesen (Phasen, Prioritäten).
+- Bei **größeren** Aufgaben oder Planung: zuerst **`docs/Roadmap.txt`** lesen (Phasen, Prioritäten).
 - **Haupt-Code der App**: `public/js/app.js` (Logik), Root-`index.html` + `src/main.css`, `public/config.js` (Supabase-URL + anon Key).
 - **Deploy (GitHub Pages)**: `.github/workflows/deploy-pages.yml` – bei Push auf **`main`**: `npm ci` + `npm run build`, Artefakt **`dist/`**.
-- Optional: Ganz oben in **`Roadmap.txt`** eine Zeile **„Aktueller Fokus:“** pflegen – dann ist der nächste Schritt sofort klar, ohne lange Einleitung im Chat.
+- Optional: Ganz oben in **`docs/Roadmap.txt`** eine Zeile **„Aktueller Fokus:“** pflegen – dann ist der nächste Schritt sofort klar, ohne lange Einleitung im Chat.
 
 # Supabase & Secrets
 

@@ -1,0 +1,62 @@
+Aktueller Fokus: Code gemeinsam durchgehen – Root-`index.html`, `src/main.css`, `public/js/app.js`, `public/config.js` in einfachen Worten; danach gezielt verbessern/weiterentwickeln.
+
+Phase 0 – Setup (diese Woche)
+•	Privates Microsoft-Konto erstellen – schauen dass wir da eins mit Zugriff auf Apps haben. Evtl. Enterprise paket holen
+•	Privates GitHub-Konto mit privater E-Mail erstellen
+•	App-Repository vom Arbeitskonto auf privates GitHub übertragen
+•	App lokal auf Privat-PC einrichten
+•	Cursor herunterladen und testen (Hobby Plan, kostenlos)
+•	Claude Pro upgraden
+•	Video drehen und auf LinkedIn + Reddit posten (r/marketing, r/content_marketing, r/SideProject)
+•	Cursor weiter testen. Sag mal: Bitte ändere mir das V4Q logo oder ähnliches. Auch mal schauen wie gut das im debuggen ist.
+________________________________________
+Phase 1 – Stabilisieren & Verstehen (Monat 1–2)
+•	Code mit Claude durchgehen – alles erklären lassen in einfachen Worten
+•	Single-File in sinnvolle Dateistruktur aufteilen (components, pages, api, utils)
+•	GitHub-Workflow etablieren – vor jeder größeren Änderung committen
+•	Erste Tester aus LinkedIn/Reddit-Feedback gewinnen
+•	NDA-Template raussuchen für Tester
+•	Canny.io Account erstellen für späteres Feature-Voting
+________________________________________
+Phase 2 – Core Features ausbauen (Monat 2–5)
+•	Kommentar-Funktion pro Eintrag einbauen
+•	Einfacher Approval-Workflow (eingereicht / freigegeben)
+•	Redaktionskalender als neuen Tab einbauen
+•	Teams-Kalender-Sync über Microsoft Graph API
+•	Vorlagen für häufig genutzte Content-Formate
+•	Wiederholende Einträge (z.B. wöchentlicher Newsletter)
+•	Teams-Benachrichtigungen bei Freigabe und Deadlines
+________________________________________
+Phase 3 – Monetarisierung vorbereiten (Monat 5–8)
+•	Google Analytics API Integration
+•	Auth richtig mit Teams-API verknüpfen
+•	Stripe Billing einbauen (3 Pläne: Starter 15€, Team 35€, Business 79€)
+•	14-Tage Free Trial ohne Kreditkarte implementieren
+•	Gewerbe anmelden
+•	Steuerberater-Gespräch (einmalig, ~100–200€)
+•	Lexoffice einrichten (~10€/Monat)
+•	Landing Page bauen
+________________________________________
+Phase 4 – Launch & AppSource (Monat 8–12)
+•	Loom-Tutorial für Onboarding erstellen
+•	FAQ / Dokumentation schreiben
+•	Microsoft Partner Network registrieren
+•	App für AppSource einreichen
+•	Review-Runden einplanen und durchhalten
+•	LinkedIn Analytics Integration
+•	SEO-Cluster-Funktionalität evaluieren
+________________________________________
+Laufend ab ersten Kunden
+•	Monatliche kurze Update-Mail an Kunden
+•	Feature-Voting über Canny aktiv halten
+•	Vor jedem größeren Deploy committen und Kunden informieren
+•	Support-Anfragen im Blick behalten (max. 3–5h/Woche einplanen)
+•	Microsoft und Google API-Änderungen im Auge behalten
+
+Version 2 – Feature-Ideen
+Auto-Eintrag aus Link oder Datei Nutzer gibt eine URL oder lädt eine Datei hoch → Claude analysiert den Inhalt automatisch → Eintrag wird mit Titel, Format, Keywords, Zusammenfassung und passenden Kategorien automatisch befüllt. Spart manuellen Aufwand beim Anlegen neuer Einträge erheblich.
+Automatische Verlinkungsvorschläge in der Link-Map Claude analysiert alle vorhandenen Einträge und schlägt Verlinkungen vor die noch nicht existieren – basierend auf thematischer Ähnlichkeit und SEO-Logik. Zeigt dem Nutzer Lücken im Content-Netz auf.
+Pillar Page & Cluster Struktur Einträge können als "Pillar" markiert werden, Cluster Pages werden als Unterpunkte zugeordnet. Claude prüft ob das Cluster thematisch vollständig ist oder ob wichtige Unterthemen fehlen.
+Externe Backlinks pro Eintrag Nutzer kann manuell eintragen welche externen Seiten auf einen Content verlinken. In der Link-Map werden dann nicht nur interne Verlinkungen sondern auch externe Autorität sichtbar.
+
+
