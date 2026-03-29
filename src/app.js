@@ -8,15 +8,23 @@ import {
   LEGACY_MAP_POSITIONS_KEY,
 } from './app/storage-keys.js';
 import { defaultColumns, SYSTEM_COLUMN_IDS } from './app/columns-defaults.js';
-import { esc, toast, showConfirm, dlFile, closeExport, typeLabel } from './app/lib.js';
+import { esc, toast, showConfirm, dlFile, closeExport, typeLabel, setSyncStatus } from './app/lib.js';
+import { appSession } from './app/session.js';
+import {
+  toggleSignup,
+  doLogin,
+  toggleUserMenu,
+  switchAccount,
+  openAdminPanelFromMenu,
+  doLogout,
+  closeAdminPanel,
+  updateUserRole,
+  loadProfile,
+} from './app/auth.js';
 
 // ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
-let sb = null;
-let currentUser = null;
-let currentProfile = null;
-let isReadOnly = false;
 
 // ═══════════════════════════════════════════
 // COLUMN DEFINITIONS
@@ -58,7 +66,7 @@ function loadColumns() {
 async function syncColumnsFromSupabase() {
   // Load columns from Supabase so all users see the same categories
   try {
-    const { data, error } = await sb.from('app_settings').select('value').eq('key','columns').single();
+    const { data, error } = await appSession.sb.from('app_settings').select('value').eq('key','columns').single();
     if(error || !data) {
       // No columns in Supabase yet — upload current localStorage columns
       await saveColumnsToSupabase();
@@ -75,186 +83,12 @@ async function syncColumnsFromSupabase() {
 
 async function saveColumnsToSupabase() {
   try {
-    await sb.from('app_settings').upsert({ key: 'columns', value: columns, updated_at: new Date().toISOString() });
+    await appSession.sb.from('app_settings').upsert({ key: 'columns', value: columns, updated_at: new Date().toISOString() });
   } catch(e) { /* ignore */ }
 }
 function saveColumns() {
   localStorage.setItem(COL_STORE, JSON.stringify(columns));
   saveColumnsToSupabase(); // sync to Supabase for all users
-}
-
-// ═══════════════════════════════════════════
-// AUTH
-// ═══════════════════════════════════════════
-let isSignupMode = false;
-function toggleSignup() {
-  isSignupMode = !isSignupMode;
-  document.getElementById('signupToggleBtn').textContent = isSignupMode ? '← Zurück zum Login' : 'Noch kein Konto? Registrieren';
-  document.getElementById('login-subtitle').textContent = isSignupMode ? 'Neues Konto erstellen' : 'Anmelden';
-  document.getElementById('loginError').textContent = '';
-}
-async function doLogin() {
-  const email = document.getElementById('loginEmail').value.trim();
-  const pw = document.getElementById('loginPassword').value;
-  const errEl = document.getElementById('loginError');
-  errEl.textContent = '';
-  if (!email || !pw) { errEl.textContent = 'Bitte E-Mail und Passwort eingeben.'; return; }
-  setSyncStatus('loading', 'Anmelden…');
-  try {
-    let res;
-    if (isSignupMode) {
-      res = await sb.auth.signUp({ email, password: pw });
-      if (!res.error) { errEl.style.color = 'var(--accent)'; errEl.textContent = 'Registrierung erfolgreich! Bitte E-Mail bestätigen.'; setSyncStatus(''); return; }
-    } else {
-      res = await sb.auth.signInWithPassword({ email, password: pw });
-    }
-    if (res.error) throw res.error;
-    rememberAccountEmail(email);
-  } catch(e) {
-    errEl.style.color = 'var(--red)';
-    errEl.textContent = e.message === 'Invalid login credentials' ? 'E-Mail oder Passwort falsch.' : e.message;
-    setSyncStatus('');
-  }
-}
-
-function hideUserMenu(){ const m=document.getElementById('userMenu'); if(m) m.style.display='none'; }
-function showUserMenu(){
-  const m = document.getElementById('userMenu');
-  if(!m) return;
-  document.getElementById('userMenuName').textContent = currentProfile?.display_name || 'Konto';
-  document.getElementById('userMenuEmail').textContent = currentProfile?.email || currentUser?.email || '';
-  document.getElementById('adminMenuBtn').style.display = currentProfile?.role === 'admin' ? 'block' : 'none';
-  m.style.display='block';
-}
-function toggleUserMenu(e){
-  e?.stopPropagation?.();
-  const m = document.getElementById('userMenu');
-  if(!m) return;
-  if(m.style.display==='none' || !m.style.display) showUserMenu();
-  else hideUserMenu();
-}
-document.addEventListener('click', (e)=>{
-  const m=document.getElementById('userMenu');
-  const chip=document.getElementById('userChip');
-  if(!m || m.style.display==='none') return;
-  if(m.contains(e.target) || chip?.contains(e.target)) return;
-  hideUserMenu();
-});
-
-function rememberAccountEmail(email){
-  try{
-    if(!email) return;
-    const key=RECENT_ACCOUNTS_KEY;
-    const raw=JSON.parse(localStorage.getItem(key)||'[]');
-    const list=Array.isArray(raw)?raw:[];
-    const next=[email, ...list.filter(x=>x!==email)].slice(0,6);
-    localStorage.setItem(key, JSON.stringify(next));
-  }catch{}
-}
-function getRememberedAccounts(){
-  try{
-    const raw=JSON.parse(localStorage.getItem(RECENT_ACCOUNTS_KEY)||'[]');
-    return Array.isArray(raw)?raw:[];
-  }catch{ return []; }
-}
-
-function switchAccount(){
-  hideUserMenu();
-  const accounts = getRememberedAccounts();
-  if(accounts.length){
-    document.getElementById('loginEmail').value = accounts[0];
-  }
-  document.getElementById('login-screen').classList.add('visible');
-  document.getElementById('appShell').style.display='none';
-  toast(accounts.length ? 'Konto wechseln: E-Mail ist vorausgefüllt.' : 'Bitte mit anderem Konto anmelden.');
-}
-
-function openAdminPanelFromMenu(){
-  hideUserMenu();
-  openAdminPanel();
-}
-
-async function doLogout(forceReload=false) {
-  hideUserMenu();
-  setSyncStatus('loading', 'Abmelden…');
-  try{
-    const { error } = await sb.auth.signOut();
-    if(error) throw error;
-  }catch(e){
-    toast('Logout-Fehler: ' + (e?.message || e));
-  }finally{
-    setSyncStatus('');
-    if(forceReload) setTimeout(()=>location.reload(), 150);
-  }
-}
-
-// ── ADMIN PANEL ──
-async function openAdminPanel() {
-  if (currentProfile?.role !== 'admin') return; // silently ignore for non-admins
-  document.getElementById('adminOverlay').classList.add('open');
-  await loadAdminUsers();
-}
-function closeAdminPanel() {
-  document.getElementById('adminOverlay').classList.remove('open');
-}
-
-async function loadAdminUsers() {
-  const tbody = document.getElementById('adminUserList');
-  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-faint)">Lädt…</td></tr>';
-  const { data: users, error } = await sb.from('profiles').select('*').order('email');
-  if (error) { tbody.innerHTML = '<tr><td colspan="4" style="color:var(--red);padding:12px">Fehler: '+error.message+'</td></tr>'; return; }
-  if (!users?.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-faint)">Keine Nutzer gefunden</td></tr>'; return; }
-  tbody.innerHTML = users.map(u => {
-    const name = esc(u.display_name || '–');
-    const email = esc(u.email || '');
-    const isMe = u.id === currentUser?.id;
-    const roleOpts = ['admin','editor','viewer'].map(r =>
-      `<option value="${r}" ${u.role===r?'selected':''}>${r}</option>`
-    ).join('');
-    return `<tr>
-      <td style="font-weight:500">${name}${isMe?' <span style="font-size:10px;color:var(--accent)">(du)</span>':''}</td>
-      <td style="color:var(--text-muted)">${email}</td>
-      <td>
-        ${isMe
-          ? `<span class="role-badge">${u.role}</span>`
-          : `<select class="role-select" onchange="updateUserRole('${u.id}', this.value, this)">${roleOpts}</select>`
-        }
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-async function updateUserRole(userId, newRole, selectEl) {
-  selectEl.disabled = true;
-  const { error } = await sb.from('profiles').update({ role: newRole }).eq('id', userId);
-  if (error) {
-    toast('Fehler: ' + error.message);
-    selectEl.disabled = false;
-    return;
-  }
-  toast(`✅ Rolle auf "${newRole}" geändert`);
-  selectEl.disabled = false;
-  // Reload user list to reflect change
-  await loadAdminUsers();
-}
-
-async function loadProfile(userId) {
-  const { data } = await sb.from('profiles').select('*').eq('id', userId).single();
-  currentProfile = data;
-  isReadOnly = data?.role === 'viewer';
-  renderUserChip();
-}
-function renderUserChip() {
-  if (!currentProfile) return;
-  const initial = (currentProfile.display_name || currentProfile.email || '?')[0].toUpperCase();
-  const isAdmin = currentProfile.role === 'admin';
-  document.getElementById('userChip').innerHTML = `
-    <div class="user-avatar">${initial}</div>
-    <span style="font-size:12px;color:var(--text-muted);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${currentProfile.display_name || currentProfile.email}</span>
-    <span class="role-badge">${currentProfile.role}</span>
-    ${isAdmin ? '<span style="font-size:10px;opacity:.7;color:rgba(255,255,255,.7)" title="Nutzerverwaltung öffnen">👥</span>' : ''}`;
-  document.getElementById('userChip').style.cursor = 'pointer';
-  if (isReadOnly) { document.getElementById('newBtn').disabled = true; }
 }
 
 // ═══════════════════════════════════════════
@@ -304,7 +138,7 @@ function rowToItem(row) {
 
 async function loadData() {
   setSyncStatus('loading', 'Lade…');
-  const { data: rows, error } = await sb.from('content_items').select('*').order('title');
+  const { data: rows, error } = await appSession.sb.from('content_items').select('*').order('title');
   if (error) { setSyncStatus('error', 'Fehler'); return; }
   data = rows.map(rowToItem);
   setSyncStatus('ok', `${data.length} Einträge`);
@@ -315,7 +149,7 @@ async function loadData() {
 
 function subscribeRealtime() {
   // Content items realtime
-  sb.channel('cm_rt')
+  appSession.sb.channel('cm_rt')
     .on('postgres_changes',{event:'*',schema:'public',table:'content_items'},async(p)=>{
       await loadData();
       const icons = {INSERT:'✨',UPDATE:'✏️',DELETE:'🗑️'};
@@ -324,7 +158,7 @@ function subscribeRealtime() {
     .subscribe();
 
   // Categories realtime — sync when any user saves columns
-  sb.channel('cm_settings')
+  appSession.sb.channel('cm_settings')
     .on('postgres_changes',{event:'*',schema:'public',table:'app_settings'},async(p)=>{
       if(p.new?.key === 'columns' && Array.isArray(p.new?.value)) {
         columns = p.new.value;
@@ -338,8 +172,8 @@ function subscribeRealtime() {
 
   // Presence — who is online
   const presenceColors = ['#e03131','#1971c2','#2f9e44','#e8590c','#9b4dca','#f0b429','#0ca678','#d6336c'];
-  const myColor = presenceColors[Math.abs(currentUser.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % presenceColors.length];
-  const presenceChannel = sb.channel('cm_presence', { config: { presence: { key: currentUser.id } } });
+  const myColor = presenceColors[Math.abs(appSession.currentUser.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % presenceColors.length];
+  const presenceChannel = appSession.sb.channel('cm_presence', { config: { presence: { key: appSession.currentUser.id } } });
   presenceChannel
     .on('presence', { event: 'sync' }, () => {
       const state = presenceChannel.presenceState();
@@ -353,7 +187,7 @@ function subscribeRealtime() {
     .subscribe(async status => {
       if(status === 'SUBSCRIBED') {
         await presenceChannel.track({
-          display_name: currentProfile?.display_name || currentUser.email,
+          display_name: appSession.currentProfile?.display_name || appSession.currentUser.email,
           color: myColor
         });
       }
@@ -369,17 +203,6 @@ function renderOnlineUsers() {
     return `<div title="${esc(u.display_name || '')}" style="width:28px;height:28px;border-radius:50%;background:${u.color};color:#fff;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;margin-left:-6px;border:2px solid var(--surface);flex-shrink:0">${initials}</div>`;
   }).join('');
   el.style.display = users.length > 0 ? 'flex' : 'none';
-}
-
-// ═══════════════════════════════════════════
-// SYNC STATUS
-// ═══════════════════════════════════════════
-function setSyncStatus(type, msg) {
-  const el = document.getElementById('syncStatus');
-  if (!type) { el.innerHTML = ''; return; }
-  if (type==='loading') el.innerHTML = `<div class="sync-spinner"></div><span>${msg}</span>`;
-  if (type==='ok')      el.innerHTML = `<span style="color:var(--accent-mid)">✓</span><span style="color:var(--text-faint)">${msg}</span>`;
-  if (type==='error')   el.innerHTML = `<span style="color:var(--red)">⚠</span><span style="color:var(--red)">${msg}</span>`;
 }
 
 // ═══════════════════════════════════════════
@@ -653,7 +476,7 @@ function renderTable(items, area) {
       view.style.minHeight = currentRowHeight + 'px';
       const ideaPrefix = (isIdea(item) && col.id === 'title') ? '<span title="Idee" style="margin-right:4px">💡</span>' : '';
       view.innerHTML = ideaPrefix + renderCellValue(item, col);
-      view.onclick = (e) => { if (!isReadOnly) startCellEdit(td, item, col); };
+      view.onclick = (e) => { if (!appSession.isReadOnly) startCellEdit(td, item, col); };
       const edit = document.createElement('div');
       edit.className = 'cell-edit';
       edit.innerHTML = buildCellEditor(item, col);
@@ -780,7 +603,7 @@ async function bulkDelete() {
     `${ids.length} Eintrag${ids.length>1?'e':''} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
     async () => {
       setSyncStatus('loading','Lösche...');
-      const {error} = await sb.from('content_items').delete().in('id', ids);
+      const {error} = await appSession.sb.from('content_items').delete().in('id', ids);
       if(error){ setSyncStatus('error','Fehler'); toast('Fehler: '+error.message); return; }
       clearBulkSelection();
       toast(`🗑 ${ids.length} Eintrag${ids.length>1?'e':''} gelöscht`);
@@ -807,7 +630,7 @@ async function applyBulkMultiselect(colId, mode) {
     }
     item[colId] = current;
     const row = itemToRow(item);
-    const {error} = await sb.from('content_items').update(row).eq('id', id);
+    const {error} = await appSession.sb.from('content_items').update(row).eq('id', id);
     if(error) errors++;
   }
   setSyncStatus(errors ? 'error' : 'ok', errors ? 'Fehler' : `${ids.length} Einträge`);
@@ -832,7 +655,7 @@ async function applyBulkEdit() {
     // Apply each change to the item
     Object.assign(item, changes);
     const row = itemToRow(item);
-    const { error } = await sb.from('content_items').update(row).eq('id', id);
+    const { error } = await appSession.sb.from('content_items').update(row).eq('id', id);
     if (error) errorCount++;
   }
   if (errorCount > 0) {
@@ -905,7 +728,7 @@ async function commitCellEdit(td, item, col) {
   if(_ca) _preservedScroll = _ca.scrollTop;
   // Build DB payload
   const dbPayload = itemToRow(item);
-  const { error } = await sb.from('content_items').update(dbPayload).eq('id', item.id);
+  const { error } = await appSession.sb.from('content_items').update(dbPayload).eq('id', item.id);
   if (error) { toast('Fehler beim Speichern: ' + error.message); return; }
   // Update view cell without full re-render
   const view = td.querySelector('.cell-view');
@@ -1269,7 +1092,7 @@ async function undoMapAction() {
     const src = data.find(d=>d.id===action.sourceId);
     if(!src) return;
     const newLinks = (src.internalLinks||[]).filter(id=>id!==action.targetId);
-    const {error} = await sb.from('content_items').update({internal_links:newLinks}).eq('id',action.sourceId);
+    const {error} = await appSession.sb.from('content_items').update({internal_links:newLinks}).eq('id',action.sourceId);
     if(!error) toast('↩ Verlinkung entfernt');
   }
 }
@@ -1299,7 +1122,7 @@ async function createLinkBetween(sourceId, targetId) {
   const newLinks = [...(source.internalLinks||[]), targetId];
   const _lCa = _getScrollEl();
   if(_lCa) _preservedScroll = _lCa.scrollTop;
-  const {error} = await sb.from('content_items').update({internal_links:newLinks}).eq('id',sourceId);
+  const {error} = await appSession.sb.from('content_items').update({internal_links:newLinks}).eq('id',sourceId);
   if(error) { toast('Fehler: '+error.message); return; }
   pushUndo({type:'link', sourceId, targetId});
   toast(`✅ ${source.title.slice(0,20)} → ${target.title.slice(0,20)}`);
@@ -2185,13 +2008,13 @@ function openDrawer(id) {
     meta.textContent = `Zuletzt bearbeitet: ${d.toLocaleDateString('de-DE')} ${d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}`;
   } else { meta.style.display = 'none'; }
   renderDrawerBody(item);
-  document.getElementById('deleteBtn').style.display = isReadOnly || currentProfile?.role!=='admin' ? 'none' : 'inline-block';
-  document.getElementById('saveBtn').disabled = isReadOnly;
+  document.getElementById('deleteBtn').style.display = appSession.isReadOnly || appSession.currentProfile?.role!=='admin' ? 'none' : 'inline-block';
+  document.getElementById('saveBtn').disabled = appSession.isReadOnly;
   document.getElementById('overlay').classList.add('open');
 }
 
 function openNewDrawer() {
-  if (isReadOnly) { toast('Nur Editoren können Inhalte erstellen.'); return; }
+  if (appSession.isReadOnly) { toast('Nur Editoren können Inhalte erstellen.'); return; }
   drawerItem = null;
   drawerKws = [];
   drawerLinks = [];
@@ -2323,7 +2146,7 @@ function renderDrawerBody(item) {
   renderDrawerKws(); // kept for backwards compat
   renderDrawerLinks();
   setTimeout(renderDrawerPotLinks, 0);
-  if (!isReadOnly) body.querySelectorAll('input,select,textarea').forEach(el=>el.removeAttribute('disabled'));
+  if (!appSession.isReadOnly) body.querySelectorAll('input,select,textarea').forEach(el=>el.removeAttribute('disabled'));
   else body.querySelectorAll('input,select,textarea').forEach(el=>el.setAttribute('disabled',''));
 }
 
@@ -2456,9 +2279,9 @@ function itemToRow(item) {
       potentialLinks: item.potentialLinks||[],
       potentialLinksText: item.potentialLinksText||'',
       isIdeaFlag: item.isIdeaFlag||false,
-      createdBy: item.createdBy || currentProfile?.display_name || currentUser?.email || ''
+      createdBy: item.createdBy || appSession.currentProfile?.display_name || appSession.currentUser?.email || ''
     },
-    created_by: currentUser?.id,
+    created_by: appSession.currentUser?.id,
   };
 }
 
@@ -2473,10 +2296,10 @@ async function saveEntry() {
     if(_seCa) _preservedScroll = _seCa.scrollTop;
     let error;
     if (drawerItem) {
-      const r = await sb.from('content_items').update(row).eq('id', drawerItem.id);
+      const r = await appSession.sb.from('content_items').update(row).eq('id', drawerItem.id);
       error = r.error;
     } else {
-      const r = await sb.from('content_items').insert(row);
+      const r = await appSession.sb.from('content_items').insert(row);
       error = r.error;
     }
     if (error) { setSyncStatus('error','Fehler'); toast('Fehler: '+error.message); return; }
@@ -2491,9 +2314,9 @@ async function saveEntry() {
 
 async function deleteEntry() {
   if (!drawerItem) return;
-  if (currentProfile?.role !== 'admin') { toast('Nur Admins können löschen.'); return; }
+  if (appSession.currentProfile?.role !== 'admin') { toast('Nur Admins können löschen.'); return; }
   showConfirm('Eintrag wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.', async () => {
-    const {error} = await sb.from('content_items').delete().eq('id', drawerItem.id);
+    const {error} = await appSession.sb.from('content_items').delete().eq('id', drawerItem.id);
     if (error) { toast('Fehler: '+error.message); return; }
     closeDrawer(); toast('Gelöscht');
   }, 'Eintrag löschen');
@@ -2602,7 +2425,7 @@ async function importItems(items) {
       keywords: [],
       internal_links: [],
       custom_fields: {},
-      created_by: currentUser?.id,
+      created_by: appSession.currentUser?.id,
     });
   });
   if(!toInsert.length) {
@@ -2610,7 +2433,7 @@ async function importItems(items) {
     return;
   }
   setSyncStatus('loading', `Importiere ${toInsert.length} Einträge…`);
-  const {error} = await sb.from('content_items').insert(toInsert);
+  const {error} = await appSession.sb.from('content_items').insert(toInsert);
   if(error) { setSyncStatus('error','Fehler'); toast('Import-Fehler: '+error.message); return; }
   toast(`✅ ${toInsert.length} Einträge importiert${skipped?', '+skipped+' übersprungen':''}`);
 }
@@ -2796,7 +2619,7 @@ async function boot() {
     document.body.innerHTML='<div style="padding:40px;font-family:sans-serif;color:#c0392b">⚠️ Bitte config.js ausfüllen!</div>';
     return;
   }
-  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  appSession.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   loadColumns();
 
   // One-time cleanup: remove bad map positions saved by old buggy builds
@@ -2814,11 +2637,11 @@ async function boot() {
     }
   } catch(e) {}
 
-  const {data:{session}} = await sb.auth.getSession();
-  if (session) {
-    currentUser = session.user;
+  const { data: { session: supaSession } } = await appSession.sb.auth.getSession();
+  if (supaSession) {
+    appSession.currentUser = supaSession.user;
     document.getElementById('appShell').style.display='flex';
-    await loadProfile(currentUser.id);
+    await loadProfile(appSession.currentUser.id);
     await syncColumnsFromSupabase(); // sync categories from Supabase
     initViewControls();
     await loadData();
@@ -2827,19 +2650,19 @@ async function boot() {
     document.getElementById('login-screen').classList.add('visible');
   }
 
-  sb.auth.onAuthStateChange(async(event,session)=>{
-    if(event==='SIGNED_IN'&&session){
-      currentUser=session.user;
+  appSession.sb.auth.onAuthStateChange(async (event, supaSession) => {
+    if (event === 'SIGNED_IN' && supaSession) {
+      appSession.currentUser = supaSession.user;
       document.getElementById('login-screen').classList.remove('visible');
       document.getElementById('appShell').style.display='flex';
-      await loadProfile(currentUser.id);
+      await loadProfile(appSession.currentUser.id);
       await syncColumnsFromSupabase(); // sync categories from Supabase
       initViewControls();
       await loadData();
       subscribeRealtime();
     }
     if(event==='SIGNED_OUT'){
-      currentUser=null;
+      appSession.currentUser=null;
       document.getElementById('appShell').style.display='none';
       document.getElementById('login-screen').classList.add('visible');
     }

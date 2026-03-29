@@ -15,6 +15,16 @@ export function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
+/** Statuszeile in der Kopfleiste (Sync / Laden / Fehler). */
+export function setSyncStatus(type, msg) {
+  const el = document.getElementById('syncStatus');
+  if (!el) return;
+  if (!type) { el.innerHTML = ''; return; }
+  if (type === 'loading') el.innerHTML = `<div class="sync-spinner"></div><span>${msg}</span>`;
+  if (type === 'ok') el.innerHTML = `<span style="color:var(--accent-mid)">✓</span><span style="color:var(--text-faint)">${msg}</span>`;
+  if (type === 'error') el.innerHTML = `<span style="color:var(--red)">⚠</span><span style="color:var(--red)">${msg}</span>`;
+}
+
 /** Kurzer Hinweis unten in der Mitte. */
 export function toast(msg) {
   const el = document.getElementById('toast');

@@ -1,4 +1,15 @@
-Aktueller Fokus: `src/app.js` weiter in ES-Module schneiden (Auth, Spalten-Logik load/save/sync, Tabelle, Kanban, Map, Export); `attachInlineHandlers`/`window` nach und nach ersetzen. Erledigt u. a.: `storage-keys.js`, `columns-defaults.js`. Test: lokal `npm run dev` unter `/Contentify/` + Deploy prüfen.
+Aktueller Fokus: Modularisierung von `src/app.js` — nächste Schritte in sinnvoller Reihenfolge (objektiv: klare Grenzen, wenig Kreuz-Kopplung).
+
+Nächste Schritte (Stand):
+1. ✅ Klein: `storage-keys.js`, `columns-defaults.js`, `lib.js` (Helfer: esc, toast, Dialog, Download, …).
+2. ✅ **Auth + Profil + Nutzerverwaltung** → `session.js` + `auth.js`; `app.js` nutzt `appSession` und importiert Auth-Funktionen.
+3. ⏭ **Daten-Pipeline** (`loadData`, Realtime, rowToItem/itemToRow) — zentral, nach Auth sinnvoll.
+4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
+5. ⏭ **UI-Ansichten:** Tabelle → Kanban → Map (je nach Bedarf; Map oft der größte Brocken).
+6. ⏭ **Import/Export** optional eigenes Modul.
+7. Langfristig: `attachInlineHandlers`/`window` durch direkte Event-Listener ersetzen wo möglich.
+
+Test nach Änderungen: lokal `npm run dev` unter `/Contentify/` + Deploy prüfen.
 
 Phase 0 – Setup (diese Woche)
 •	Privates Microsoft-Konto erstellen – schauen dass wir da eins mit Zugriff auf Apps haben. Evtl. Enterprise paket holen
