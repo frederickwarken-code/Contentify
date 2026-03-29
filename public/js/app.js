@@ -1,4 +1,4 @@
-﻿// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 let sb = null;
@@ -11,8 +11,33 @@ let isReadOnly = false;
 // Stored in localStorage + Supabase (settings table optional)
 // Each column: { id, name, type, options:[{label,color}], visible, width }
 // ═══════════════════════════════════════════
-const COL_STORE = 'v4q_columns_v3';
-const DATA_STORE = 'v4q_data_v2';
+const COL_STORE = 'contentify_columns_v3';
+const DATA_STORE = 'contentify_data_v2';
+const RECENT_ACCOUNTS_KEY = 'contentify_recent_accounts_v1';
+const ROW_HEIGHT_KEY = 'contentify_row_height';
+const MAP_PRESETS_KEY = 'contentify_map_presets';
+const MAP_POS_KEY = 'contentify_map_pos_v2';
+const LEGACY_MAP_POSITIONS_KEY = 'contentify_map_positions';
+
+(function migrateLegacyStorageKeys() {
+  try {
+    const pairs = [
+      ['v4q_columns_v3', COL_STORE],
+      ['v4q_data_v2', DATA_STORE],
+      ['v4q_recent_accounts_v1', RECENT_ACCOUNTS_KEY],
+      ['v4q_row_height', ROW_HEIGHT_KEY],
+      ['v4q_map_presets', MAP_PRESETS_KEY],
+      ['v4q_map_pos_v2', MAP_POS_KEY],
+      ['v4q_map_positions', LEGACY_MAP_POSITIONS_KEY],
+    ];
+    for (const [oldK, newK] of pairs) {
+      const oldV = localStorage.getItem(oldK);
+      if (oldV == null) continue;
+      if (!localStorage.getItem(newK)) localStorage.setItem(newK, oldV);
+      localStorage.removeItem(oldK);
+    }
+  } catch (_) { /* ignore */ }
+})();
 
 let columns = [];  // active column definitions
 let data = [];     // content items
@@ -186,7 +211,7 @@ document.addEventListener('click', (e)=>{
 function rememberAccountEmail(email){
   try{
     if(!email) return;
-    const key='v4q_recent_accounts_v1';
+    const key=RECENT_ACCOUNTS_KEY;
     const raw=JSON.parse(localStorage.getItem(key)||'[]');
     const list=Array.isArray(raw)?raw:[];
     const next=[email, ...list.filter(x=>x!==email)].slice(0,6);
@@ -195,7 +220,7 @@ function rememberAccountEmail(email){
 }
 function getRememberedAccounts(){
   try{
-    const raw=JSON.parse(localStorage.getItem('v4q_recent_accounts_v1')||'[]');
+    const raw=JSON.parse(localStorage.getItem(RECENT_ACCOUNTS_KEY)||'[]');
     return Array.isArray(raw)?raw:[];
   }catch{ return []; }
 }
@@ -1127,10 +1152,10 @@ function renderKanban(items, area) {
 }
 
 // ── ROW HEIGHT ──
-let currentRowHeight = parseInt(localStorage.getItem('v4q_row_height')||'34');
+let currentRowHeight = parseInt(localStorage.getItem(ROW_HEIGHT_KEY)||'34');
 function setRowHeight(h) {
   currentRowHeight = parseInt(h);
-  localStorage.setItem('v4q_row_height', h);
+  localStorage.setItem(ROW_HEIGHT_KEY, h);
   document.querySelectorAll('#tBody tr').forEach(tr => { tr.style.height = h + 'px'; });
   document.querySelectorAll('.cell-view').forEach(cv => { cv.style.minHeight = h + 'px'; });
   // Sync slider
@@ -1189,8 +1214,6 @@ function getNodeLabel(d) {
 let linkModeActive = false;
 // Map state
 let mapPhysicsEnabled = true;
-const MAP_PRESETS_KEY = 'v4q_map_presets';
-const MAP_POS_KEY = 'v4q_map_pos_v2';
 
 // ─── Position store ───────────────────────────────────────────────────────────
 // nodePos: { [id]: {x, y} } — the ONLY source of truth for node positions
@@ -2571,10 +2594,10 @@ function exportCSV() {
       return `"${String(v).replace(/"/g,'""')}"`;
     }).join(';'));
   });
-  dlFile('V4Q_Content_Map.csv', rows.join('\n'), 'text/csv');
+  dlFile('Content_Map.csv', rows.join('\n'), 'text/csv');
   closeExport();
 }
-function exportJSON(){ dlFile('V4Q_Content_Map.json',JSON.stringify(data,null,2),'application/json'); closeExport(); }
+function exportJSON(){ dlFile('Content_Map.json',JSON.stringify(data,null,2),'application/json'); closeExport(); }
 function dlFile(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();}
 
 // ── IMPORT ──
@@ -2755,7 +2778,7 @@ async function boot() {
 
   // One-time cleanup: remove bad map positions saved by old buggy builds
   try {
-    const raw = JSON.parse(localStorage.getItem('v4q_map_positions')||'{}');
+    const raw = JSON.parse(localStorage.getItem(LEGACY_MAP_POSITIONS_KEY)||'{}');
     const clean = {};
     let removed = 0;
     Object.entries(raw).forEach(([k,v]) => {
@@ -2763,7 +2786,7 @@ async function boot() {
       else removed++;
     });
     if(removed > 0) {
-      localStorage.setItem('v4q_map_positions', JSON.stringify(clean));
+      localStorage.setItem(LEGACY_MAP_POSITIONS_KEY, JSON.stringify(clean));
       console.log('Cleaned', removed, 'bad map positions from localStorage');
     }
   } catch(e) {}

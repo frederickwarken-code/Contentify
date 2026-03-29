@@ -8,7 +8,7 @@ Phase 0 – Setup (diese Woche)
 •	Cursor herunterladen und testen (Hobby Plan, kostenlos)
 •	Claude Pro upgraden
 •	Video drehen und auf LinkedIn + Reddit posten (r/marketing, r/content_marketing, r/SideProject)
-•	Cursor weiter testen. Sag mal: Bitte ändere mir das V4Q logo oder ähnliches. Auch mal schauen wie gut das im debuggen ist.
+•	Cursor weiter testen (Debug-Flow, kleine Änderungen).
 ________________________________________
 Phase 1 – Stabilisieren & Verstehen (Monat 1–2)
 •	Code mit Claude durchgehen – alles erklären lassen in einfachen Worten
