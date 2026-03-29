@@ -14,7 +14,7 @@ alwaysApply: true
 
 - **Geschäftsidee**: B2B-SaaS (Abo) für **kleine Marketing-Teams**; Frederick baut und vertreibt **solo** (Roadmap/Phasen beachten).
 - Web-App als **Microsoft Teams**-App geplant: Tabs **Content-Bibliothek (Tabelle)**, **Kanban**, **visuelle Link-Map**; eigene Kategorien; Einträge als **„Idee“** in allen Tabs hervorgehoben.
-- **Frontend (Vite):** `index.html` im **Repo-Root** (Markup), `src/main.css` (Styles), `src/main.js` (Vite-Einstieg), `public/js/app.js` (App-Logik, globale Handler), `public/config.js` (Supabase-URL + anon Key). CDN: Supabase-JS + d3 im HTML. **Lokal:** im Root `npm install` (einmal), dann `npm run dev` → im Browser **`http://localhost:5173/Contentify/`** öffnen (Pfad mit `/Contentify/`). **Build:** `npm run build` → Ausgabe `dist/`. **Nächster Schritt:** Logik aus `app.js` in Module unter `src/` ziehen.
+- **Frontend (Vite):** `index.html` im **Repo-Root** (Markup), `src/main.css` (Styles), `src/main.js` (Vite-Einstieg → importiert `src/app.js`), Module z. B. `src/app/storage-keys.js`, `public/config.js` (Supabase-URL + anon Key). CDN: Supabase-JS + d3 im HTML. **Lokal:** im Root `npm install` (einmal), dann `npm run dev` → im Browser **`http://localhost:5173/Contentify/`** öffnen (Pfad mit `/Contentify/`). **Build:** `npm run build` → Ausgabe `dist/`. **Weiter:** `src/app.js` in weitere Module schneiden (Auth, Tabelle, Map, …).
 - **Backend**: **Supabase** (Auth + DB). **RLS** ist relevant für Sicherheit.
 
 # Repo & Pfade
@@ -26,7 +26,7 @@ alwaysApply: true
 # Kontext für neue Sessions (damit der Assistent „up to date“ bleibt)
 
 - Bei **größeren** Aufgaben oder Planung: zuerst **`docs/Roadmap.txt`** lesen (Phasen, Prioritäten).
-- **Haupt-Code der App**: `public/js/app.js` (Logik), Root-`index.html` + `src/main.css`, `public/config.js` (Supabase-URL + anon Key).
+- **Haupt-Code der App**: `src/app.js` (Logik, wird von `src/main.js` geladen), Root-`index.html` + `src/main.css`, `public/config.js` (Supabase-URL + anon Key).
 - **Deploy (GitHub Pages)**: `.github/workflows/deploy-pages.yml` – bei Push auf **`main`**: `npm ci` + `npm run build`, Artefakt **`dist/`**.
 - Optional: Ganz oben in **`docs/Roadmap.txt`** eine Zeile **„Aktueller Fokus:“** pflegen – dann ist der nächste Schritt sofort klar, ohne lange Einleitung im Chat.
 
