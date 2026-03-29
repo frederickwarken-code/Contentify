@@ -1,4 +1,4 @@
-Aktueller Fokus: `src/app.js` weiter in ES-Module schneiden (z. B. Auth, Spalten, Tabelle, Kanban, Map, Export); `attachInlineHandlers`/`window` für HTML-onclick nach und nach ersetzen. Test: lokal `npm run dev` unter `/Contentify/` + Deploy prüfen.
+Aktueller Fokus: `src/app.js` weiter in ES-Module schneiden (Auth, Spalten-Logik load/save/sync, Tabelle, Kanban, Map, Export); `attachInlineHandlers`/`window` nach und nach ersetzen. Erledigt u. a.: `storage-keys.js`, `columns-defaults.js`. Test: lokal `npm run dev` unter `/Contentify/` + Deploy prüfen.
 
 Phase 0 – Setup (diese Woche)
 •	Privates Microsoft-Konto erstellen – schauen dass wir da eins mit Zugriff auf Apps haben. Evtl. Enterprise paket holen

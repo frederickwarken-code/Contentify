@@ -1,11 +1,3 @@
-// ═══════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════
-let sb = null;
-let currentUser = null;
-let currentProfile = null;
-let isReadOnly = false;
-
 import {
   COL_STORE,
   DATA_STORE,
@@ -15,6 +7,15 @@ import {
   MAP_POS_KEY,
   LEGACY_MAP_POSITIONS_KEY,
 } from './app/storage-keys.js';
+import { defaultColumns, SYSTEM_COLUMN_IDS } from './app/columns-defaults.js';
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+let sb = null;
+let currentUser = null;
+let currentProfile = null;
+let isReadOnly = false;
 
 // ═══════════════════════════════════════════
 // COLUMN DEFINITIONS
@@ -45,61 +46,11 @@ let drawerItem = null; // null = new
 // Temp state for option builder
 let newColOptions = [];
 
-// ── Default columns ──
-function defaultColumns() {
-  return [
-    { id:'title',    name:'Titel',       type:'text',        visible:true,  locked:true },
-    { id:'format',   name:'Format',      type:'select',      visible:true,
-      options:[
-        {label:'Page',  color:'#2f9e44'},
-        {label:'Video', color:'#222222'}
-      ]},
-    { id:'topic',    name:'Plattform',   type:'multiselect', visible:true,
-      options:[
-        {label:'Youtube',  color:'#e03131'},
-        {label:'LinkedIn', color:'#1971c2'},
-        {label:'Website',  color:'#2f9e44'},
-        {label:'Reddit',   color:'#e8590c'}
-      ]},
-    { id:'phase',    name:'Keywords',    type:'multiselect', visible:true,
-      options:[
-        {label:'Core',           color:'#868e96'},
-        {label:'Produkt',        color:'#2f9e44'},
-        {label:'Branche',        color:'#1971c2'},
-        {label:'Blog',           color:'#e67700'},
-        {label:'Lead-Gen',       color:'#9b4dca'},
-        {label:'Content',        color:'#e8590c'},
-        {label:'Unternehmen',    color:'#6741d9'},
-        {label:'Customer Center',color:'#495057'},
-        {label:'Kontakt',        color:'#2f9e44'},
-        {label:'ModSPOT',        color:'#e8590c'},
-        {label:'ModOFFICE',      color:'#40c057'},
-        {label:'ModHYL',         color:'#c0eb75'},
-        {label:'ACR',            color:'#cc5de8'},
-        {label:'Werkerführung',  color:'#5c7cfa'},
-        {label:'KI',             color:'#40c057'},
-        {label:'ModPCB',         color:'#74c0fc'}
-      ]},
-    { id:'owner',    name:'Verantw.',    type:'select',      visible:true,
-      options:[
-        {label:'Frederick W', color:'#868e96'},
-        {label:'Thomas M',    color:'#868e96'}
-      ]},
-    { id:'date',     name:'Datum',       type:'date',        visible:true  },
-    { id:'internalLinks', name:'Links',  type:'links',       visible:true,  locked:true },
-    { id:'persona',  name:'Speicherort', type:'text',        visible:true  },
-    { id:'url',      name:'URL',         type:'url',         visible:false },
-    { id:'notes',    name:'Notizen',     type:'text',        visible:false, locked:true },
-    { id:'createdBy',name:'Erstellt von',type:'text',        visible:false, locked:true, system:true },
-  ];
-}
-
 function loadColumns() {
   try {
     const r = localStorage.getItem(COL_STORE);
     columns = r ? JSON.parse(r) : defaultColumns();
-    const SYSTEM_IDS = ['title','internalLinks','notes','createdBy'];
-    columns.forEach(col => { if(!SYSTEM_IDS.includes(col.id)) delete col.locked; });
+    columns.forEach(col => { if(!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
   } catch { columns = defaultColumns(); }
 }
 
@@ -115,8 +66,7 @@ async function syncColumnsFromSupabase() {
     const remote = data.value;
     if(Array.isArray(remote) && remote.length > 0) {
       columns = remote;
-      const SYSTEM_IDS = ['title','internalLinks','notes','createdBy'];
-      columns.forEach(col => { if(!SYSTEM_IDS.includes(col.id)) delete col.locked; });
+      columns.forEach(col => { if(!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
       localStorage.setItem(COL_STORE, JSON.stringify(columns));
     }
   } catch(e) { /* Supabase not available, use localStorage */ }
@@ -377,8 +327,7 @@ function subscribeRealtime() {
     .on('postgres_changes',{event:'*',schema:'public',table:'app_settings'},async(p)=>{
       if(p.new?.key === 'columns' && Array.isArray(p.new?.value)) {
         columns = p.new.value;
-        const SYSTEM_IDS = ['title','internalLinks','notes','createdBy'];
-        columns.forEach(col => { if(!SYSTEM_IDS.includes(col.id)) delete col.locked; });
+        columns.forEach(col => { if(!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
         localStorage.setItem(COL_STORE, JSON.stringify(columns));
         render();
         toast('🔄 Kategorien aktualisiert');
@@ -1892,8 +1841,7 @@ function closeColModal() {
 
 function renderColList() {
   // Strip locked from non-system columns (fix old localStorage data)
-  const SYSTEM_IDS = ['title','internalLinks','notes','createdBy'];
-  columns.forEach(col => { if(!SYSTEM_IDS.includes(col.id)) delete col.locked; });
+  columns.forEach(col => { if(!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
 
   const el = document.getElementById('colList');
   el.innerHTML = '';
@@ -1966,7 +1914,7 @@ function renderColList() {
     editBtn.textContent = '✏️';
     editBtn.addEventListener('click', e => { e.stopPropagation(); startEditColumn(i); });
 
-    const isSystem = SYSTEM_IDS.includes(col.id);
+    const isSystem = SYSTEM_COLUMN_IDS.includes(col.id);
     if (isSystem) {
       const lockBtn = document.createElement('button');
       lockBtn.className = 'btn-icon';
@@ -2011,8 +1959,7 @@ function toggleColVisible(i, visible) {
 
 function deleteColumn(i) {
   const col = columns[i];
-  const LOCKED_IDS = ['title', 'internalLinks', 'notes', 'createdBy'];
-  if (LOCKED_IDS.includes(col.id)) {
+  if (SYSTEM_COLUMN_IDS.includes(col.id)) {
     toast('Diese Systemkategorie kann nicht gelöscht werden.');
     return;
   }
@@ -2704,7 +2651,9 @@ function cycleSortBy(colId) {
   }
   render();
 }
-function closeExport(){ document.getElementById('exportPanel').classList.remove('open'); }
+function closeExport() {
+  document.getElementById('exportPanel')?.classList.remove('open');
+}
 // Custom confirm dialog — Teams blocks window.confirm()
 function showConfirm(message, onOk, title='Bestätigung') {
   const overlay = document.getElementById('confirmOverlay');
@@ -2727,14 +2676,32 @@ function esc(s){ if(Array.isArray(s)) s=s.join(', '); return(String(s||'')).repl
 let toastTimer;
 function toast(msg){ const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2500); }
 
-document.getElementById('exportBtn').onclick=(e)=>{e.stopPropagation();document.getElementById('exportPanel').classList.toggle('open');};
-document.addEventListener('click',closeExport);
-document.getElementById('exportPanel').addEventListener('click',e=>e.stopPropagation());
-// Direkt gebunden (nicht nur window): Inline-Handler suchen Globals auf window — zuverlässiger als reines onclick.
+document.getElementById('exportBtn').onclick = (e) => {
+  e.stopPropagation();
+  document.getElementById('exportPanel')?.classList.toggle('open');
+};
+document.addEventListener('click', closeExport);
+document.getElementById('exportPanel')?.addEventListener('click', (e) => e.stopPropagation());
+// Direkt gebunden: gleiche Ursache wie früher beim Speichern-Button — Inline-onclick + async/Modul.
 document.getElementById('saveBtn')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   void saveEntry();
+});
+document.getElementById('bulkApplyBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  void applyBulkEdit();
+});
+document.getElementById('bulkDeleteBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  void bulkDelete();
+});
+document.getElementById('bulkClearBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  clearBulkSelection();
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){closeDrawer();closeColModal();}

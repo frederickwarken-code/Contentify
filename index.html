@@ -158,9 +158,9 @@
       <div id="bulkBar" style="overflow:visible">
         <span class="bulk-count" id="bulkCount">0 ausgewählt</span>
         <div id="bulkFields" style="display:flex;gap:10px;flex-wrap:wrap;flex:1"></div>
-        <button class="bulk-apply" onclick="applyBulkEdit()">Anwenden</button>
-        <button class="btn-danger" style="font-size:12px;padding:5px 12px" onclick="bulkDelete()">🗑 Löschen</button>
-        <button class="bulk-clear" onclick="clearBulkSelection()">✕ Abwählen</button>
+        <button type="button" class="bulk-apply" id="bulkApplyBtn">Anwenden</button>
+        <button type="button" class="btn-danger" id="bulkDeleteBtn" style="font-size:12px;padding:5px 12px">🗑 Löschen</button>
+        <button type="button" class="bulk-clear" id="bulkClearBtn">✕ Abwählen</button>
       </div>
       <div id="contentArea"></div>
     </main>
