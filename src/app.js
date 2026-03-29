@@ -8,6 +8,7 @@ import {
   LEGACY_MAP_POSITIONS_KEY,
 } from './app/storage-keys.js';
 import { defaultColumns, SYSTEM_COLUMN_IDS } from './app/columns-defaults.js';
+import { esc, toast, showConfirm, dlFile, closeExport, typeLabel } from './app/lib.js';
 
 // ═══════════════════════════════════════════
 // INIT
@@ -1358,11 +1359,16 @@ function renderMap() {
         <div style="padding:8px;border-top:1px solid var(--border)">
           <div style="display:flex;gap:5px">
             <input id="presetNameInput" type="text" placeholder="Name eingeben…" style="flex:1;padding:5px 8px;border:1px solid var(--border-mid);border-radius:var(--radius);font-size:12px;font-family:var(--sans);color:var(--text);background:var(--surface);outline:none">
-            <button onclick="savePreset()" style="background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:5px 10px;font-size:12px;cursor:pointer">Speichern</button>
+            <button type="button" id="presetSaveBtn" style="background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:5px 10px;font-size:12px;cursor:pointer">Speichern</button>
           </div>
         </div>
       </div>
     </div>`;
+  document.getElementById('presetSaveBtn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void savePreset();
+  });
   // Restore link mode button if active
   const lmBtn = document.getElementById('linkModeBtn');
   if(lmBtn&&linkModeActive){ lmBtn.style.background='var(--teal)'; lmBtn.style.color='#fff'; }
@@ -1947,10 +1953,6 @@ function renderColList() {
   });
 }
 
-function typeLabel(t) {
-  return {text:'Text',number:'Zahl',select:'Auswahl',multiselect:'Mehrfachauswahl',date:'Datum',url:'URL',links:'Interne Links'}[t]||t;
-}
-
 function toggleColVisible(i, visible) {
   columns[i].visible = visible;
   saveColumns();
@@ -2519,7 +2521,6 @@ function exportCSV() {
   closeExport();
 }
 function exportJSON(){ dlFile('Content_Map.json',JSON.stringify(data,null,2),'application/json'); closeExport(); }
-function dlFile(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();}
 
 // ── IMPORT ──
 async function handleImportFile(input) {
@@ -2651,30 +2652,6 @@ function cycleSortBy(colId) {
   }
   render();
 }
-function closeExport() {
-  document.getElementById('exportPanel')?.classList.remove('open');
-}
-// Custom confirm dialog — Teams blocks window.confirm()
-function showConfirm(message, onOk, title='Bestätigung') {
-  const overlay = document.getElementById('confirmOverlay');
-  const msgEl = document.getElementById('confirmMsg');
-  const titleEl = document.getElementById('confirmTitle');
-  const okBtn = document.getElementById('confirmOk');
-  const cancelBtn = document.getElementById('confirmCancel');
-  if(!overlay) { if(window.confirm(message)) onOk(); return; }
-  msgEl.textContent = message;
-  titleEl.textContent = title;
-  overlay.classList.add('open');
-  const close = () => overlay.classList.remove('open');
-  const handleOk = () => { close(); okBtn.removeEventListener('click', handleOk); cancelBtn.removeEventListener('click', handleCancel); onOk(); };
-  const handleCancel = () => { close(); okBtn.removeEventListener('click', handleOk); cancelBtn.removeEventListener('click', handleCancel); };
-  okBtn.addEventListener('click', handleOk);
-  cancelBtn.addEventListener('click', handleCancel);
-}
-
-function esc(s){ if(Array.isArray(s)) s=s.join(', '); return(String(s||'')).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-let toastTimer;
-function toast(msg){ const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2500); }
 
 document.getElementById('exportBtn').onclick = (e) => {
   e.stopPropagation();
