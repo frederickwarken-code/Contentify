@@ -1,9 +1,12 @@
-Aktueller Fokus: Modularisierung von `src/app.js` — nächste Schritte in sinnvoller Reihenfolge (objektiv: klare Grenzen, wenig Kreuz-Kopplung).
+Aktueller Fokus: Modularisierung von `src/app.js` — **Daten-Pipeline** weiter Stück für Stück (nach früherem großen Auslagerungsversuch: nur kleine Schritte).
 
 Nächste Schritte (Stand):
 1. ✅ Klein: `storage-keys.js`, `columns-defaults.js`, `lib.js` (Helfer: esc, toast, Dialog, Download, …).
 2. ✅ **Auth + Profil + Nutzerverwaltung** → `session.js` + `auth.js`; `app.js` nutzt `appSession` und importiert Auth-Funktionen.
-3. ⏭ **Daten-Pipeline** (`loadData`, Realtime, rowToItem/itemToRow) — zentral, nach Auth sinnvoll.
+3. 🔄 **Daten-Pipeline** (`src/app/data-pipeline.js`):
+   - ✅ **Schritt 1 erledigt:** `rowToItem` + `itemToRow` ausgelagert; `app.js` hat dünne Wrapper (`itemToRow` übergibt `appSession` an das Modul).
+   - ⏭ **Nächster Schritt:** `loadData` ins Modul (mit klarer Übergabe von `sb`, `setSyncStatus`, Daten-Setter, `render`) — erst danach Realtime (`subscribeRealtime`) anfassen.
+   - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
 5. ⏭ **UI-Ansichten:** Tabelle → Kanban → Map (je nach Bedarf; Map oft der größte Brocken).
 6. ⏭ **Import/Export** optional eigenes Modul.
