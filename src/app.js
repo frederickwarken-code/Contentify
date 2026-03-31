@@ -46,6 +46,9 @@ let sortDir = 'asc';     // 'asc' or 'desc'
 let _sim = null;       // new simulation reference
 let selectedNodeId = null;
 let mapZoom = null;
+let realtimeChannels = [];
+/** True während Mehrfachänderungen — blockiert parallele Realtime-Refreshes (verhindert Sync-„Loops“). */
+let bulkOperationRunning = false;
 
 // Temp state for drawer
 let drawerKws = [];
@@ -83,8 +86,15 @@ async function syncColumnsFromSupabase() {
 
 async function saveColumnsToSupabase() {
   try {
-    await appSession.sb.from('app_settings').upsert({ key: 'columns', value: columns, updated_at: new Date().toISOString() });
-  } catch(e) { /* ignore */ }
+    const { error } = await appSession.sb.from('app_settings').upsert({
+      key: 'columns',
+      value: columns,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+  } catch (e) {
+    toast('Kategorien konnten nicht in Supabase gespeichert werden: ' + (e?.message || e));
+  }
 }
 function saveColumns() {
   localStorage.setItem(COL_STORE, JSON.stringify(columns));
@@ -102,14 +112,14 @@ function rowToItem(row) {
     // For multiselect cols using DB string fields: prefer array from custom_fields
     topic: (() => {
       const v = cf.topic !== undefined ? cf.topic : row.topic;
-      if(Array.isArray(v)) return v;
-      if(typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch(e){} }
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch (e) { /* ignore */ } }
       return v || '';
     })(),
     phase: (() => {
       const v = cf.phase !== undefined ? cf.phase : row.phase;
-      if(Array.isArray(v)) return v;
-      if(typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch(e){} }
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch (e) { /* ignore */ } }
       return v || '';
     })(),
     format: row.format || '',
@@ -127,52 +137,149 @@ function rowToItem(row) {
     isIdeaFlag: cf.isIdeaFlag || false,
     updatedAt: row.updated_at,
   };
-  // Merge custom fields (but don't overwrite the fields we explicitly set above)
-  Object.keys(cf).forEach(k => {
-    if (!['topic','phase','createdBy','potentialLinks','potentialLinksText','isIdeaFlag'].includes(k)) {
+  Object.keys(cf).forEach((k) => {
+    if (!['topic', 'phase', 'createdBy', 'potentialLinks', 'potentialLinksText', 'isIdeaFlag'].includes(k)) {
       item[k] = cf[k];
     }
   });
   return item;
 }
 
-async function loadData() {
-  setSyncStatus('loading', 'Lade…');
-  const { data: rows, error } = await appSession.sb.from('content_items').select('*').order('title');
-  if (error) { setSyncStatus('error', 'Fehler'); return; }
-  data = rows.map(rowToItem);
-  setSyncStatus('ok', `${data.length} Einträge`);
+/** Ordnet einen gespeicherten Wert der passenden Options-Bezeichnung zu (Groß/Klein egal). */
+function canonicalOptionLabel(col, raw) {
+  const opts = col.options || [];
+  return opts.find((o) => o.label.toLowerCase() === String(raw ?? '').trim().toLowerCase())?.label ?? null;
+}
 
+/** Nur noch gültige Mehrfach-Auswahl-Labels (laut aktueller Kategorie-Definition). */
+function normalizeMultiselectToOptions(col, raw) {
+  const arr = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+  const out = [];
+  const seen = new Set();
+  for (const v of arr) {
+    const c = canonicalOptionLabel(col, v);
+    if (c && !seen.has(c)) {
+      seen.add(c);
+      out.push(c);
+    }
+  }
+  return out;
+}
+
+function normalizeSelectToOptions(col, raw) {
+  return canonicalOptionLabel(col, raw) ?? '';
+}
+
+function sameMultiValue(a, b) {
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  if (sa.length !== sb.length) return false;
+  return sa.every((v, i) => v === sb[i]);
+}
+
+/** Entfernt veraltete Auswahlwerte, wenn Optionen umbenannt/gelöscht wurden. Gibt Einträge zurück, die in die DB geschrieben werden müssen. */
+function pruneStaleCategoryValuesSync() {
+  const dirty = [];
+  for (const item of data) {
+    let changed = false;
+    for (const col of columns) {
+      if (col.type === 'multiselect') {
+        const next = normalizeMultiselectToOptions(col, item[col.id]);
+        const prev = Array.isArray(item[col.id]) ? item[col.id] : (item[col.id] ? [item[col.id]] : []);
+        if (!sameMultiValue(prev, next)) {
+          item[col.id] = next;
+          changed = true;
+        }
+      } else if (col.type === 'select') {
+        const next = normalizeSelectToOptions(col, item[col.id]);
+        const prev = item[col.id] ?? '';
+        if (next !== prev) {
+          item[col.id] = next;
+          changed = true;
+        }
+      }
+    }
+    if (changed) dirty.push(item);
+  }
+  return dirty;
+}
+
+async function persistPrunedItems(items) {
+  if (!items.length) return;
+  bulkOperationRunning = true;
+  try {
+    for (const item of items) {
+      const row = itemToRow(item);
+      const { error } = await appSession.sb.from('content_items').update(row).eq('id', item.id);
+      if (error) console.error('Aufräumen alter Kategoriewerte fehlgeschlagen', item.id, error);
+    }
+  } finally {
+    bulkOperationRunning = false;
+  }
+}
+
+/** Nach geladenen Spalten-Definitionen: ungültige Auswahlwerte entfernen und speichern (nicht bei jedem loadData — sonst Race mit neuen Kategorie-Optionen). */
+async function runPruneStaleCategoryValues() {
+  const dirty = pruneStaleCategoryValuesSync();
+  if (!dirty.length) return;
+  await persistPrunedItems(dirty);
+}
+
+async function loadData(options = {}) {
+  const { quiet = false } = options;
+  if (!quiet) setSyncStatus('loading', 'Lade…');
+  const { data: rows, error } = await appSession.sb.from('content_items').select('*').order('title');
+  if (error) {
+    if (!quiet) setSyncStatus('error', 'Fehler');
+    return;
+  }
+  data = rows.map(rowToItem);
+  if (!quiet) setSyncStatus('ok', `${data.length} Einträge`);
   render();
-  // renderTable handles scroll restoration via _preservedScroll
 }
 
 function subscribeRealtime() {
+  // Prevent duplicate subscriptions (SIGNED_IN can fire more than once).
+  if (realtimeChannels.length) {
+    realtimeChannels.forEach((ch) => {
+      try { appSession.sb.removeChannel(ch); } catch (e) { /* ignore */ }
+    });
+    realtimeChannels = [];
+  }
+
   // Content items realtime
-  appSession.sb.channel('cm_rt')
-    .on('postgres_changes',{event:'*',schema:'public',table:'content_items'},async(p)=>{
+  const contentChannel = appSession.sb.channel('cm_rt')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'content_items' }, async (p) => {
+      // Während Bulk-Updates: kein paralleles loadData (sonst stapeln sich „Lade…“/„Speichere…“ und die UI hängt).
+      if (bulkOperationRunning) return;
       await loadData();
-      const icons = {INSERT:'✨',UPDATE:'✏️',DELETE:'🗑️'};
-      showActivity(icons[p.eventType]||'●', p.new?.title || p.old?.title || 'Eintrag');
+      const icons = { INSERT: '✨', UPDATE: '✏️', DELETE: '🗑️' };
+      showActivity(icons[p.eventType] || '●', p.new?.title || p.old?.title || 'Eintrag');
     })
     .subscribe();
+  realtimeChannels.push(contentChannel);
 
   // Categories realtime — sync when any user saves columns
-  appSession.sb.channel('cm_settings')
-    .on('postgres_changes',{event:'*',schema:'public',table:'app_settings'},async(p)=>{
-      if(p.new?.key === 'columns' && Array.isArray(p.new?.value)) {
+  const settingsChannel = appSession.sb.channel('cm_settings')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, async (p) => {
+      if (p.new?.key === 'columns' && Array.isArray(p.new?.value)) {
         columns = p.new.value;
-        columns.forEach(col => { if(!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
+        columns.forEach(col => { if (!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
         localStorage.setItem(COL_STORE, JSON.stringify(columns));
         render();
         toast('🔄 Kategorien aktualisiert');
+        void (async () => {
+          await loadData({ quiet: true });
+          await runPruneStaleCategoryValues();
+        })();
       }
     })
     .subscribe();
+  realtimeChannels.push(settingsChannel);
 
   // Presence — who is online
-  const presenceColors = ['#e03131','#1971c2','#2f9e44','#e8590c','#9b4dca','#f0b429','#0ca678','#d6336c'];
-  const myColor = presenceColors[Math.abs(appSession.currentUser.id.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % presenceColors.length];
+  const presenceColors = ['#e03131', '#1971c2', '#2f9e44', '#e8590c', '#9b4dca', '#f0b429', '#0ca678', '#d6336c'];
+  const myColor = presenceColors[Math.abs(appSession.currentUser.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % presenceColors.length];
   const presenceChannel = appSession.sb.channel('cm_presence', { config: { presence: { key: appSession.currentUser.id } } });
   presenceChannel
     .on('presence', { event: 'sync' }, () => {
@@ -180,18 +287,19 @@ function subscribeRealtime() {
       onlineUsers = {};
       Object.entries(state).forEach(([uid, presences]) => {
         const p = presences[0];
-        if(p) onlineUsers[uid] = { display_name: p.display_name, color: p.color };
+        if (p) onlineUsers[uid] = { display_name: p.display_name, color: p.color };
       });
       renderOnlineUsers();
     })
     .subscribe(async status => {
-      if(status === 'SUBSCRIBED') {
+      if (status === 'SUBSCRIBED') {
         await presenceChannel.track({
           display_name: appSession.currentProfile?.display_name || appSession.currentUser.email,
-          color: myColor
+          color: myColor,
         });
       }
     });
+  realtimeChannels.push(presenceChannel);
 }
 
 function renderOnlineUsers() {
@@ -480,10 +588,25 @@ function renderTable(items, area) {
       const edit = document.createElement('div');
       edit.className = 'cell-edit';
       edit.innerHTML = buildCellEditor(item, col);
-      edit.querySelector('input,select,textarea')?.addEventListener('blur', () => commitCellEdit(td, item, col));
-      edit.querySelector('input,select,textarea')?.addEventListener('keydown', e => {
-        if (e.key==='Enter' && col.type!=='text') commitCellEdit(td, item, col);
-        if (e.key==='Escape') cancelCellEdit(td);
+      const editorEl = edit.querySelector('input,select,textarea');
+      edit.addEventListener('mousedown', (e) => e.stopPropagation());
+      edit.addEventListener('click', (e) => e.stopPropagation());
+      edit.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); cancelCellEdit(td); }
+      });
+      if (col.type !== 'multiselect') {
+        editorEl?.addEventListener('blur', () => commitCellEdit(td, item, col));
+        editorEl?.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && col.type !== 'text') commitCellEdit(td, item, col);
+        });
+        if (editorEl?.tagName === 'SELECT') {
+          editorEl.addEventListener('change', () => commitCellEdit(td, item, col));
+        }
+      }
+      edit.querySelector('.cell-ms-apply')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void commitCellEdit(td, item, col);
       });
       td.appendChild(view);
       td.appendChild(edit);
@@ -565,15 +688,15 @@ function updateBulkBar() {
       return `<div class="bulk-field" style="position:relative">
         <label>${esc(col.name)}:</label>
         <div style="position:relative;display:inline-block">
-          <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'"
+          <button type="button" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'"
             style="padding:4px 10px;border:1px solid var(--border-mid);border-radius:var(--radius);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;font-family:var(--sans)">
             Auswählen ▾
           </button>
           <div style="display:none;position:absolute;top:100%;left:0;background:var(--surface);border:1px solid var(--border-mid);border-radius:var(--radius);box-shadow:var(--shadow-lg);z-index:100;min-width:220px;max-height:280px;overflow-y:auto;padding:4px 0">
             ${opts}
             <div style="border-top:1px solid var(--border);margin-top:4px;padding:4px 8px;display:flex;gap:6px">
-              <button onclick="applyBulkMultiselect('${col.id}','add')" style="flex:1;padding:3px;font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer">+ Hinzufügen</button>
-              <button onclick="applyBulkMultiselect('${col.id}','remove')" style="flex:1;padding:3px;font-size:11px;background:var(--red);color:#fff;border:none;border-radius:var(--radius);cursor:pointer">− Entfernen</button>
+              <button type="button" onclick="event.stopPropagation();applyBulkMultiselect('${col.id}','add')" style="flex:1;padding:3px;font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer">+ Hinzufügen</button>
+              <button type="button" onclick="event.stopPropagation();applyBulkMultiselect('${col.id}','remove')" style="flex:1;padding:3px;font-size:11px;background:var(--red);color:#fff;border:none;border-radius:var(--radius);cursor:pointer">− Entfernen</button>
             </div>
           </div>
         </div>
@@ -612,59 +735,105 @@ async function bulkDelete() {
   );
 }
 
+function _normLabel(s) {
+  return String(s || '').trim().toLowerCase();
+}
+
 async function applyBulkMultiselect(colId, mode) {
+  if (bulkOperationRunning) { toast('Bitte warten, vorige Änderung läuft noch.'); return; }
   // Get checked options
   const checked = [...document.querySelectorAll(`.bulk-ms-opt[data-col="${colId}"]:checked`)].map(c=>c.value);
   if(!checked.length) { toast('Bitte mindestens eine Option auswählen'); return; }
   const ids = [...selectedIds];
+  if(!ids.length) { toast('Keine Einträge ausgewählt'); return; }
+  bulkOperationRunning = true;
   setSyncStatus('loading', 'Speichere…');
-  let errors = 0;
-  for(const id of ids) {
-    const item = data.find(d=>d.id===id);
-    if(!item) continue;
-    let current = Array.isArray(item[colId]) ? [...item[colId]] : (item[colId] ? [item[colId]] : []);
-    if(mode === 'add') {
-      checked.forEach(v => { if(!current.includes(v)) current.push(v); });
-    } else {
-      current = current.filter(v => !checked.includes(v));
+  try {
+    let errors = 0;
+    const checkedNorm = new Set(checked.map(_normLabel));
+    for(const id of ids) {
+      const item = data.find(d=>d.id===id);
+      if(!item) continue;
+      let current = Array.isArray(item[colId]) ? [...item[colId]] : (item[colId] ? [item[colId]] : []);
+      if(mode === 'add') {
+        checked.forEach((v) => {
+          if (!current.some((x) => _normLabel(x) === _normLabel(v))) current.push(v);
+        });
+      } else {
+        current = current.filter((v) => !checkedNorm.has(_normLabel(v)));
+      }
+      item[colId] = current;
+      const row = itemToRow(item);
+      const { error } = await appSession.sb.from('content_items').update(row).eq('id', id);
+      if (error) {
+        errors++;
+        console.error('Bulk multiselect update failed', id, error);
+      }
     }
-    item[colId] = current;
-    const row = itemToRow(item);
-    const {error} = await appSession.sb.from('content_items').update(row).eq('id', id);
-    if(error) errors++;
+    setSyncStatus(errors ? 'error' : 'ok', errors ? 'Fehler' : `${ids.length} Einträge`);
+    toast(errors ? `${errors} Fehler` : `✅ ${ids.length} Einträge aktualisiert`);
+    if (!errors) await loadData({ quiet: true });
+  } catch (e) {
+    setSyncStatus('error', 'Fehler');
+    toast('Mehrfachänderung fehlgeschlagen: ' + (e?.message || e));
+  } finally {
+    bulkOperationRunning = false;
   }
-  setSyncStatus(errors ? 'error' : 'ok', errors ? 'Fehler' : `${ids.length} Einträge`);
-  toast(errors ? `${errors} Fehler` : `✅ ${ids.length} Einträge aktualisiert`);
 }
 
 async function applyBulkEdit() {
   if (selectedIds.size === 0) return;
+  if (bulkOperationRunning) { toast('Bitte warten, vorige Änderung läuft noch.'); return; }
   const selectCols = columns.filter(c => c.type === 'select' || c.type === 'multiselect');
   const changes = {};
+  const multiselectChanges = {};
   selectCols.forEach(col => {
+    if (col.type === 'multiselect') {
+      const checked = [...document.querySelectorAll(`.bulk-ms-opt[data-col="${col.id}"]:checked`)].map(c => c.value);
+      if (checked.length) multiselectChanges[col.id] = checked;
+      return;
+    }
     const sel = document.getElementById(`bulk_${col.id}`);
     if (sel?.value) changes[col.id] = sel.value;
   });
-  if (Object.keys(changes).length === 0) { toast('Bitte zuerst einen Wert auswählen'); return; }
+  if (Object.keys(changes).length === 0 && Object.keys(multiselectChanges).length === 0) {
+    toast('Bitte zuerst einen Wert auswählen');
+    return;
+  }
   const ids = [...selectedIds];
+  bulkOperationRunning = true;
   setSyncStatus('loading', `${ids.length} Einträge werden aktualisiert…`);
-  let errorCount = 0;
-  for (const id of ids) {
-    const item = data.find(d => d.id === id);
-    if (!item) continue;
-    // Apply each change to the item
-    Object.assign(item, changes);
-    const row = itemToRow(item);
-    const { error } = await appSession.sb.from('content_items').update(row).eq('id', id);
-    if (error) errorCount++;
+  try {
+    let errorCount = 0;
+    for (const id of ids) {
+      const item = data.find(d => d.id === id);
+      if (!item) continue;
+      Object.assign(item, changes);
+      Object.entries(multiselectChanges).forEach(([colId, vals]) => {
+        item[colId] = [...vals];
+      });
+      const row = itemToRow(item);
+      const { error } = await appSession.sb.from('content_items').update(row).eq('id', id);
+      if (error) {
+        errorCount++;
+        console.error('Bulk edit update failed', id, error);
+      }
+    }
+    await loadData({ quiet: true });
+    clearBulkSelection();
+    if (errorCount > 0) {
+      toast(`⚠ ${errorCount} Fehler beim Speichern`);
+      setSyncStatus('error', 'Fehler');
+    } else {
+      toast(`✅ ${ids.length} Einträge aktualisiert`);
+      setSyncStatus('ok', `${data.length} Einträge`);
+    }
+  } catch (e) {
+    setSyncStatus('error', 'Fehler');
+    toast('Mehrfachänderung fehlgeschlagen: ' + (e?.message || e));
+  } finally {
+    bulkOperationRunning = false;
   }
-  if (errorCount > 0) {
-    toast(`⚠ ${errorCount} Fehler beim Speichern`);
-  } else {
-    toast(`✅ ${ids.length} Einträge aktualisiert`);
-  }
-  clearBulkSelection();
-  setSyncStatus('ok', `${data.length} Einträge`);
 }
 
 function renderCellValue(item, col) {
@@ -673,13 +842,19 @@ function renderCellValue(item, col) {
     const cnt = (val||[]).length;
     return cnt ? `<span style="color:var(--accent);font-weight:600">${cnt}</span>` : `<span style="color:var(--text-faint)">–</span>`;
   }
-  if (col.type === 'select' || col.type === 'multiselect') {
-    const vals = Array.isArray(val) ? val : [val];
-    return vals.filter(Boolean).map(v => {
-      const opt = (col.options||[]).find(o=>o.label===v);
-      const color = opt?.color || '#888';
-      return `<span class="cell-tag" style="background:${color}22;color:${color}">${esc(v)}</span>`;
-    }).join(' ') || '<span style="color:var(--text-faint)">–</span>';
+  if (col.type === 'select') {
+    const o = (col.options || []).find((x) => x.label.toLowerCase() === String(val ?? '').trim().toLowerCase());
+    if (!o) return '<span style="color:var(--text-faint)">–</span>';
+    return `<span class="cell-tag" style="background:${o.color}22;color:${o.color}">${esc(o.label)}</span>`;
+  }
+  if (col.type === 'multiselect') {
+    const raw = Array.isArray(val) ? val : (val ? [val] : []);
+    const tags = raw.map((v) => {
+      const o = (col.options || []).find((x) => x.label.toLowerCase() === String(v).trim().toLowerCase());
+      if (!o) return '';
+      return `<span class="cell-tag" style="background:${o.color}22;color:${o.color}">${esc(o.label)}</span>`;
+    }).filter(Boolean);
+    return tags.join(' ') || '<span style="color:var(--text-faint)">–</span>';
   }
   if (col.type === 'url' && val) {
     const short = val.replace(/^https?:\/\/(www\.)?/,'').slice(0,30);
@@ -698,6 +873,25 @@ function buildCellEditor(item, col) {
     const opts = (col.options||[]).map(o=>`<option value="${esc(o.label)}" ${val===o.label?'selected':''}>${esc(o.label)}</option>`).join('');
     return `<select><option value="">–</option>${opts}</select>`;
   }
+  if (col.type === 'multiselect') {
+    const current = normalizeMultiselectToOptions(col, val);
+    const curSet = new Set(current);
+    const n = current.length;
+    const triggerLabel = n ? `${n} ausgewählt ▾` : 'Auswählen ▾';
+    const opts = (col.options || []).map((o) => `
+      <label class="cell-ms-opt-row">
+        <input type="checkbox" class="cell-ms-opt" value="${esc(o.label)}" ${curSet.has(o.label) ? 'checked' : ''}>
+        <span class="cell-ms-dot" style="background:${o.color || '#888'}"></span>
+        <span class="cell-ms-label">${esc(o.label)}</span>
+      </label>`).join('');
+    return `<div class="cell-ms-inner">
+      <div class="cell-ms-trigger" aria-hidden="true">${esc(triggerLabel)}</div>
+      <div class="cell-ms-dropdown" style="display:block">
+        <div class="cell-ms-dropdown-body">${opts}</div>
+        <div class="cell-ms-footer"><button type="button" class="cell-ms-apply">OK</button></div>
+      </div>
+    </div>`;
+  }
   if (col.type === 'date') return `<input type="date" value="${esc(val)}">`;
   if (col.type === 'number') return `<input type="number" value="${esc(val)}">`;
   if (col.type === 'url') return `<input type="url" value="${esc(val)}" placeholder="https://…">`;
@@ -706,18 +900,42 @@ function buildCellEditor(item, col) {
 
 function startCellEdit(td, item, col) {
   if (col.id==='internalLinks') { openDrawer(item.id); return; }
-  if (col.type==='multiselect') { openDrawer(item.id); return; }
+  if (col.type==='multiselect') td.classList.add('cell-ms-wrap');
   td.classList.add('editing');
   const input = td.querySelector('.cell-edit input, .cell-edit select, .cell-edit textarea');
   if (input) { input.focus(); if(input.select) input.select(); }
+  if (col.type === 'multiselect') {
+    td.querySelector('.cell-ms-opt')?.focus();
+  }
 }
 
 function cancelCellEdit(td) {
+  const dd = td.querySelector('.cell-ms-dropdown');
+  if (dd) dd.style.display = 'none';
   td.classList.remove('editing');
+  td.classList.remove('cell-ms-wrap');
 }
 
 async function commitCellEdit(td, item, col) {
+  if (col.type === 'multiselect') {
+    const checked = [...td.querySelectorAll('.cell-edit .cell-ms-opt:checked')].map((c) => c.value);
+    const prev = normalizeMultiselectToOptions(col, item[col.id]);
+    td.classList.remove('editing');
+    td.classList.remove('cell-ms-wrap');
+    if (sameMultiValue(checked, prev)) return;
+    item[col.id] = checked;
+    const _ca = _getScrollEl();
+    if (_ca) _preservedScroll = _ca.scrollTop;
+    const dbPayload = itemToRow(item);
+    const { error } = await appSession.sb.from('content_items').update(dbPayload).eq('id', item.id);
+    if (error) { toast('Fehler beim Speichern: ' + error.message); return; }
+    const view = td.querySelector('.cell-view');
+    if (view) view.innerHTML = renderCellValue(item, col);
+    setSyncStatus('ok', `${data.length} Einträge`);
+    return;
+  }
   td.classList.remove('editing');
+  td.classList.remove('cell-ms-wrap');
   const input = td.querySelector('.cell-edit input, .cell-edit select');
   if (!input) return;
   const newVal = input.value;
@@ -1860,9 +2078,15 @@ function renderEditOptionList() {
     div.dataset.index = i;
     div.innerHTML = `
       <span style="cursor:grab;color:var(--text-faint);padding:0 4px;font-size:14px" title="Reihenfolge ändern">⠿</span>
-      <input type="text" value="${esc(opt.label)}" placeholder="Optionsname" oninput="editColOptions[${i}].label=this.value">
-      <input type="color" value="${opt.color||'#888'}" class="option-color" oninput="editColOptions[${i}].color=this.value">
-      <button class="btn-icon" onclick="removeEditOption(${i})" style="color:var(--red)">✕</button>`;
+      <input type="text" value="${esc(opt.label)}" placeholder="Optionsname">
+      <input type="color" value="${opt.color||'#888'}" class="option-color">
+      <button class="btn-icon" type="button" style="color:var(--red)">✕</button>`;
+    const nameInput = div.querySelector('input[type="text"]');
+    const colorInput = div.querySelector('input[type="color"]');
+    const removeBtn = div.querySelector('button');
+    nameInput?.addEventListener('input', (e) => { editColOptions[i].label = e.target.value; });
+    colorInput?.addEventListener('input', (e) => { editColOptions[i].color = e.target.value; });
+    removeBtn?.addEventListener('click', () => removeEditOption(i));
     div.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', i); div.style.opacity='0.4'; });
     div.addEventListener('dragend', () => { div.style.opacity='1'; });
     div.addEventListener('dragover', e => { e.preventDefault(); div.style.background='var(--surface2)'; });
@@ -1914,6 +2138,7 @@ function saveEditColumn() {
   renderColList();
   render();
   toast('Kategorie aktualisiert ✓');
+  void runPruneStaleCategoryValues();
 }
 
 function onNewColTypeChange() {
@@ -1937,9 +2162,15 @@ function renderOptionList() {
     div.dataset.index = i;
     div.innerHTML = `
       <span style="cursor:grab;color:var(--text-faint);padding:0 4px;font-size:14px" title="Reihenfolge ändern">⠿</span>
-      <input type="text" value="${esc(opt.label)}" placeholder="Optionsname" oninput="newColOptions[${i}].label=this.value">
-      <input type="color" value="${opt.color}" class="option-color" oninput="newColOptions[${i}].color=this.value" title="Farbe">
-      <button class="btn-icon" onclick="removeOption(${i})" style="color:var(--red)">✕</button>`;
+      <input type="text" value="${esc(opt.label)}" placeholder="Optionsname">
+      <input type="color" value="${opt.color}" class="option-color" title="Farbe">
+      <button class="btn-icon" type="button" style="color:var(--red)">✕</button>`;
+    const nameInput = div.querySelector('input[type="text"]');
+    const colorInput = div.querySelector('input[type="color"]');
+    const removeBtn = div.querySelector('button');
+    nameInput?.addEventListener('input', (e) => { newColOptions[i].label = e.target.value; });
+    colorInput?.addEventListener('input', (e) => { newColOptions[i].color = e.target.value; });
+    removeBtn?.addEventListener('click', () => removeOption(i));
     div.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', i); div.style.opacity='0.4'; });
     div.addEventListener('dragend', () => { div.style.opacity='1'; });
     div.addEventListener('dragover', e => { e.preventDefault(); div.style.background='var(--surface2)'; });
@@ -1988,6 +2219,7 @@ function createColumn() {
   renderColList();
   render();
   toast(`Kategorie "${name}" erstellt ✓`);
+  void runPruneStaleCategoryValues();
 }
 
 // ═══════════════════════════════════════════
@@ -2251,12 +2483,13 @@ function getDrawerValues() {
   return item;
 }
 
-function itemToRow(item) {
+function itemToRow(item, options = {}) {
+  const { forInsert = false } = options;
   // Map app fields to DB columns
-  const coreFields = ['title','topic','phase','format','persona','owner','mainKw','url','notes','date','kws','internalLinks'];
+  const coreFields = ['title', 'topic', 'phase', 'format', 'persona', 'owner', 'mainKw', 'url', 'notes', 'date', 'kws', 'internalLinks'];
   const custom = {};
-  Object.keys(item).forEach(k => {
-    if (!coreFields.includes(k) && !['id','updatedAt'].includes(k)) custom[k] = item[k];
+  Object.keys(item).forEach((k) => {
+    if (!coreFields.includes(k) && !['id', 'updatedAt'].includes(k)) custom[k] = item[k];
   });
   return {
     title: item.title || '',
@@ -2274,14 +2507,14 @@ function itemToRow(item) {
     custom_fields: {
       ...custom,
       // Store multiselect arrays in custom_fields since DB columns are strings
-      ...(Array.isArray(item.topic) ? {topic: item.topic} : (item.topic ? {topic: [item.topic]} : {})),
-      ...(Array.isArray(item.phase) ? {phase: item.phase} : (item.phase ? {phase: [item.phase]} : {})),
-      potentialLinks: item.potentialLinks||[],
-      potentialLinksText: item.potentialLinksText||'',
-      isIdeaFlag: item.isIdeaFlag||false,
-      createdBy: item.createdBy || appSession.currentProfile?.display_name || appSession.currentUser?.email || ''
+      ...(Array.isArray(item.topic) ? { topic: item.topic } : (item.topic ? { topic: [item.topic] } : {})),
+      ...(Array.isArray(item.phase) ? { phase: item.phase } : (item.phase ? { phase: [item.phase] } : {})),
+      potentialLinks: item.potentialLinks || [],
+      potentialLinksText: item.potentialLinksText || '',
+      isIdeaFlag: item.isIdeaFlag || false,
+      createdBy: item.createdBy || appSession.currentProfile?.display_name || appSession.currentUser?.email || '',
     },
-    created_by: appSession.currentUser?.id,
+    ...(forInsert ? { created_by: appSession.currentUser?.id } : {}),
   };
 }
 
@@ -2289,7 +2522,7 @@ async function saveEntry() {
   try {
     const vals = getDrawerValues();
     if (!vals.title) { toast('Bitte Titel eingeben'); return; }
-    const row = itemToRow({...(drawerItem||{}), ...vals});
+    const row = itemToRow({ ...(drawerItem || {}), ...vals }, { forInsert: !drawerItem });
     setSyncStatus('loading','Speichere…');
     // Save scroll before DB write (realtime will trigger re-render)
     const _seCa = _getScrollEl();
@@ -2303,6 +2536,8 @@ async function saveEntry() {
       error = r.error;
     }
     if (error) { setSyncStatus('error','Fehler'); toast('Fehler: '+error.message); return; }
+    await loadData();
+    setSyncStatus('ok', 'Gespeichert');
     closeDrawer();
     toast(drawerItem ? 'Gespeichert ✓' : 'Erstellt ✓');
   } catch (err) {
@@ -2645,6 +2880,7 @@ async function boot() {
     await syncColumnsFromSupabase(); // sync categories from Supabase
     initViewControls();
     await loadData();
+    await runPruneStaleCategoryValues();
     subscribeRealtime();
   } else {
     document.getElementById('login-screen').classList.add('visible');
@@ -2659,9 +2895,14 @@ async function boot() {
       await syncColumnsFromSupabase(); // sync categories from Supabase
       initViewControls();
       await loadData();
+      await runPruneStaleCategoryValues();
       subscribeRealtime();
     }
     if(event==='SIGNED_OUT'){
+      realtimeChannels.forEach((ch) => {
+        try { appSession.sb.removeChannel(ch); } catch (e) { /* ignore */ }
+      });
+      realtimeChannels = [];
       appSession.currentUser=null;
       document.getElementById('appShell').style.display='none';
       document.getElementById('login-screen').classList.add('visible');
