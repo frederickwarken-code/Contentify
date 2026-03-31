@@ -21,6 +21,10 @@ import {
   updateUserRole,
   loadProfile,
 } from './app/auth.js';
+import {
+  rowToItem,
+  itemToRow as itemToDbRow,
+} from './app/data-pipeline.js';
 
 // ═══════════════════════════════════════════
 // INIT
@@ -104,46 +108,6 @@ function saveColumns() {
 // ═══════════════════════════════════════════
 // DATA
 // ═══════════════════════════════════════════
-function rowToItem(row) {
-  const cf = row.custom_fields || {};
-  const item = {
-    id: row.id,
-    title: row.title || '',
-    // For multiselect cols using DB string fields: prefer array from custom_fields
-    topic: (() => {
-      const v = cf.topic !== undefined ? cf.topic : row.topic;
-      if (Array.isArray(v)) return v;
-      if (typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch (e) { /* ignore */ } }
-      return v || '';
-    })(),
-    phase: (() => {
-      const v = cf.phase !== undefined ? cf.phase : row.phase;
-      if (Array.isArray(v)) return v;
-      if (typeof v === 'string' && v.startsWith('[')) { try { return JSON.parse(v); } catch (e) { /* ignore */ } }
-      return v || '';
-    })(),
-    format: row.format || '',
-    persona: row.persona || '',
-    owner: row.owner || '',
-    mainKw: row.main_keyword || '',
-    kws: row.keywords || [],
-    url: row.url || '',
-    notes: row.description || '',
-    date: row.planned_date || '',
-    internalLinks: row.internal_links || [],
-    createdBy: cf.createdBy || row.profiles?.display_name || row.profiles?.email || '',
-    potentialLinks: cf.potentialLinks || [],
-    potentialLinksText: cf.potentialLinksText || '',
-    isIdeaFlag: cf.isIdeaFlag || false,
-    updatedAt: row.updated_at,
-  };
-  Object.keys(cf).forEach((k) => {
-    if (!['topic', 'phase', 'createdBy', 'potentialLinks', 'potentialLinksText', 'isIdeaFlag'].includes(k)) {
-      item[k] = cf[k];
-    }
-  });
-  return item;
-}
 
 /** Ordnet einen gespeicherten Wert der passenden Options-Bezeichnung zu (Groß/Klein egal). */
 function canonicalOptionLabel(col, raw) {
@@ -2485,37 +2449,11 @@ function getDrawerValues() {
 
 function itemToRow(item, options = {}) {
   const { forInsert = false } = options;
-  // Map app fields to DB columns
-  const coreFields = ['title', 'topic', 'phase', 'format', 'persona', 'owner', 'mainKw', 'url', 'notes', 'date', 'kws', 'internalLinks'];
-  const custom = {};
-  Object.keys(item).forEach((k) => {
-    if (!coreFields.includes(k) && !['id', 'updatedAt'].includes(k)) custom[k] = item[k];
+  return itemToDbRow(item, {
+    forInsert,
+    currentProfile: appSession.currentProfile,
+    currentUser: appSession.currentUser,
   });
-  return {
-    title: item.title || '',
-    topic: Array.isArray(item.topic) ? '' : (item.topic || ''), // array stored in custom_fields below
-    phase: Array.isArray(item.phase) ? '' : (item.phase || ''), // array stored in custom_fields below
-    format: item.format || '',
-    persona: item.persona || '',
-    owner: item.owner || '',
-    main_keyword: item.mainKw || '',
-    url: item.url || '',
-    description: item.notes || '',
-    planned_date: item.date || null,
-    keywords: item.kws || [],
-    internal_links: item.internalLinks || [],
-    custom_fields: {
-      ...custom,
-      // Store multiselect arrays in custom_fields since DB columns are strings
-      ...(Array.isArray(item.topic) ? { topic: item.topic } : (item.topic ? { topic: [item.topic] } : {})),
-      ...(Array.isArray(item.phase) ? { phase: item.phase } : (item.phase ? { phase: [item.phase] } : {})),
-      potentialLinks: item.potentialLinks || [],
-      potentialLinksText: item.potentialLinksText || '',
-      isIdeaFlag: item.isIdeaFlag || false,
-      createdBy: item.createdBy || appSession.currentProfile?.display_name || appSession.currentUser?.email || '',
-    },
-    ...(forInsert ? { created_by: appSession.currentUser?.id } : {}),
-  };
 }
 
 async function saveEntry() {
