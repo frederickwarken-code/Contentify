@@ -1,6 +1,67 @@
-Aktueller Fokus: Modularisierung von `src/app.js` — **UI-Ansichten** weiter (nach Tabelle: Kanban → Map).
+Aktueller Fokus: **Offener Bug — Multi-Tab / Tab-Wechsel / Supabase-Anfragen** (Stand letzte Aktualisierung: **2026-03-31**). **Problem besteht nach wie vor** (Nutzer-Bestätigung nach den unten genannten Fixes). Nächste Session: unten **„Jetziger Stand & nächste Schritte“** und Session-Start-Checkliste. Modularisierung (Kanban/Map …) erst wieder sinnvoll, wenn Basis stabil.
 
-Nächste Schritte (Stand):
+--- Debug-Handoff Multi-Tab / Sync ---
+
+**Symptom**
+- Nach Wechsel zwischen zwei Browser-Tabs (auch gleicher Account, zwei normale Tabs) wirkt die Tabelle oft „tot“: Inline-Bearbeitung / Kategorien klicken funktioniert nicht wie erwartet.
+- Sync der Daten zwischen Tabs war zeitweise wieder gestört bzw. instabil.
+- **Bulk-Aktion:** Meldung **„… Einträge werden aktualisiert…“** bleibt hängen bzw. oben erscheint eine **Fehlermeldung**; in der **Netzwerk-Ansicht** waren u. a. **GET**-Anfragen zu **`profiles`**, **`app_settings`**, **`content_items`** **rot** (nicht nur PATCH) — spricht für **Auth/JWT/Session** oder **abgelehnte Lesevorgänge**, nicht nur „Klick tot“.
+
+**Session-Start (ca. 5 Min.) — immer zuerst, bevor wieder Code geändert wird**
+1. Entwicklertools öffnen (z. B. Strg+Umschalt+I), Reiter **Netzwerk**.
+2. Optional: „Protokoll beibehalten“ / Preserve log aktivieren, damit Requests beim Tab-Wechsel nicht verschwinden.
+3. Zwei Tabs: mindestens **Contentify** in Tab A, Tab B beliebig (zweiter Contentify-Tab oder leere Seite).
+4. **Tab A → Tab B → zurück zu Tab A** (genau das Szenario, das den Bug auslöst).
+5. In Contentify: **eine Zelle ändern** (z. B. Kategorie) und speichern / Auswahl wählen.
+6. Im Netzwerk-Tab filtern nach `content_items` oder nach Methode **PATCH** (bzw. POST bei neuem Eintrag):
+   - **Rot, 401 oder 403** auf den Request → eher **Auth / JWT / RLS** (nicht „Klick tot“, sondern Server lehnt ab).
+   - **Gar kein PATCH**, obwohl du geändert hast → eher **Klick / DOM / JS** (Handler greift nicht, oder Speichern wird nicht ausgelöst).
+7. Reiter **Konsole**: beim Klick/Speichern **rote** Fehler? Kurz mitscreenshoten oder eine Zeile notieren.
+8. **Ergebnis in eine Zeile schreiben** (z. B. „PATCH 401“ / „kein PATCH“ / „Konsole: …“) — dann weiß die nächste Session sofort, welche Richtung (Auth vs. UI vs. Race) sinnvoll ist.
+
+**Was im Code angefasst wurde (kumuliert; zum Weitermachen relevant)**
+
+*Ältere Sessions:*
+- Tab-Rückkehr: `runTabReturnRecovery` / `initTabReturnRecovery` in `src/app.js` (visibility + pageshow persisted): `auth.refreshSession()`, Blur, hängende `td.editing` entfernen, Scroll, `render()`.
+- Realtime bei jedem Tab-Wechsel neu abonnieren: **wieder entfernt** (brachte nichts).
+- **Tabellen-Klicks:** Delegation auf **`document` mit Capture-Phase** (`src/app/table.js`).
+- **Resize-Handles:** kein doppeltes Anlegen pro `<th>` (`addColResizeHandles`).
+- Mapping/Sync: `rowToItem` / `custom_fields`; `commitCellEdit` / `<select>`; BroadcastChannel + `CONTENT_SYNC_BUMP_KEY` + `storage`; `enqueueQuietReloadData` ohne verstecktes „defer when hidden“ für komplette Loads.
+
+*Stand 2026-03-31 (zusätzlich):*
+- **`src/app/table.js`:** Supabase-**Update/Delete** (Bulk, Zellenedit, ggf. Löschen) mit **`withTimeout`** (**30 s**), damit die UI nicht endlos auf „Speichern…“ hängt; bei Timeout Toast mit Hinweis.
+- **`src/app/data-pipeline.js` — `loadData`:** Bei **auth-ähnlichen** Supabase-Fehlern (401/403, JWT-Texte, Code PGRST301) **einmal** `refreshSession()` und **Ladevorgang wiederholen**; bei endgültigem Fehler **`setSyncStatus('error', …)`** mit **kurzer Meldung** und **`throw`**, damit Aufrufer (z. B. Bulk) nicht „erfolgreich“ enden, wenn das Neuladen fehlschlägt.
+- **`src/app.js`:** `try/catch` um **`loadData`** beim **Boot**, bei **SIGNED_IN**, nach **Import**; Realtime-Callback nach Kategorien-Update; bei Fehler Toast mit Hinweis **F5 / neu anmelden**.
+
+**Jetziger Stand & nächste Schritte (für die nächste Session)**
+- **Bug ist nicht gelöst** — trotz Session-Refresh-Retry und Timeouts.
+- **Als Nächstes sinnvoll:** Beim roten Request in Netzwerk **„Antwort“ / Response** öffnen — steht dort z. B. **JWT expired**, **invalid API key**, **RLS**? Das entscheidet Auth vs. Projekt vs. Regeln.
+- **Git-Bisect** oder Commit finden, ab dem es noch ging (falls je stabil).
+- Optional: **Pro-TAB-Auth** (`getAuthStorageKeyForBrowserTab` / `sessionStorage`) vs. Zwei-Tabs-Szenario bewusst prüfen (gleicher Account, zwei Tabs).
+- **Viele Konsole-Fehler (z. B. 200+):** nicht alles muss von Contentify kommen — **Erweiterungen**, **Vite HMR** — ggf. **Inkognito ohne Erweiterungen** testen.
+
+**Was schon probiert wurde (laut Verlauf / Code) und nicht zuverlässig geholfen hat**
+- Realtime-Patch vs. voller Reload; quiet-load Generation gegen Races.
+- Visibility-basiertes **Defer** von Reloads (wurde zurückgenommen — brach Sync).
+- `initTabReturnReflow` nur `render()` nach Tab-Rückkehr.
+- Erweiterte Recovery: Session + Realtime neu + Blur + Editing-Klassen strippen + doppeltes rAF + `render`.
+- Delegation auf `#contentArea` → dann `document` + Capture.
+- `refreshSession` nach Tab-Rückkehr.
+- **`loadData`:** einmaliger **refreshSession**-Retry bei auth-ähnlichen Fehlern; klare Fehlermeldung in der Kopfzeile; **`Mutation`-Timeouts** (30 s) in `table.js` — **trotzdem: Problem besteht weiter** (Stand 2026-03-31).
+
+**Nächste Debug-Ideen (nach Session-Start oben)**
+1. **Git-Bisect** oder **Branch:** letzten Commit finden, an dem Multi-Tab noch ging (falls es je stabil war).
+2. **Schritt zurück Modularisierung?** Alles wieder in eine große `app.js` zu packen **behebt den Bug nicht automatisch**, hilft aber beim **Bisect** und beim **Vergleich** mit einem älteren Stand. Sinnvoller: **ein Modul nach dem anderen** testen (z. B. `table.js`/`data-pipeline.js` temporär wieder einbinden) oder **älteren Commit** auschecken, nur um zu sehen ob Bug **vor** der Auslagerung existierte.
+3. **Nicht vergessen:** Zwei Tabs = zwei **sessionStorage**-Auth-Keys (`getAuthStorageKeyForBrowserTab`) — Absicht für Multi-Account; prüfen ob das Nebenwirkungen mit Refresh/Sync hat.
+4. **Rennen / Reloads:** `_quietLoadGen`, parallele `loadData`, `render()` vs. `commitCellEdit` — gezielt loggen oder Breakpoints nur wenn Session-Start **PATCH** zeigt aber UI verwirrend ist.
+5. **Realtime / WebSocket:** nur relevant wenn **Sync** oder **Live-Updates** kaputt sind, nicht bei reinem „Klick tot“ (siehe Session-Start: unterscheidet das).
+
+**Hinweis F12 / DevTools**
+- F12 öffnet in den meisten Browsern die Entwicklertools (nicht „alle Tabs schließen“). Alternativen: Strg+Umschalt+I, Rechtsklick → Untersuchen.
+
+--- Ende Debug-Handoff ---
+
+Nächste Schritte (Stand Modularisierung, technisch):
 1. ✅ Klein: `storage-keys.js`, `columns-defaults.js`, `lib.js` (Helfer: esc, toast, Dialog, Download, …).
 2. ✅ **Auth + Profil + Nutzerverwaltung** → `session.js` + `auth.js`; `app.js` nutzt `appSession` und importiert Auth-Funktionen.
 3. ✅ **Daten-Pipeline** (`src/app/data-pipeline.js`):

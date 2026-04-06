@@ -3,7 +3,18 @@
  */
 import { columns } from './columns.js';
 import { ROW_HEIGHT_KEY } from './storage-keys.js';
-import { esc, toast, showConfirm, setSyncStatus } from './lib.js';
+import { esc, toast, showConfirm, setSyncStatus, withTimeout } from './lib.js';
+
+/** Supabase-Update ohne Timeout kann ewig hängen (Tab-Wechsel / Hintergrund) — UI bleibt dann auf „Speichern…“. */
+const MUTATION_TIMEOUT_MS = 30000;
+
+async function updateContentItemRow(row, id) {
+  return withTimeout(
+    appSession.sb.from('content_items').update(row).eq('id', id),
+    MUTATION_TIMEOUT_MS,
+    '__timeout__'
+  );
+}
 import { appSession } from './session.js';
 import { normalizeMultiselectToOptions, sameMultiValue } from './field-normalize.js';
 
@@ -24,6 +35,42 @@ let _hooks = {
 /** Muss vor erster Tabellen-Render aufgerufen werden (Daten + Callbacks aus app.js). */
 export function setTableAppHooks(hooks) {
   _hooks = { ..._hooks, ...hooks };
+  attachCellViewDelegationOnce();
+}
+
+/**
+ * Ein Listener (Capture auf document) — keine pro-Zelle onclick-Closures.
+ * Capture + aktuelle #contentArea pro Klick: zuverlässig nach Tab-Wechsel / Hintergrund,
+ * falls Bubbling oder ein älteres Element-Verhalten den früheren Listener auf #contentArea stört.
+ */
+let _cellViewDelegationBound = false;
+function onContentAreaCellViewClick(e) {
+  const area = document.getElementById('contentArea');
+  if (!area || !area.contains(e.target)) return;
+  if (appSession.isReadOnly) return;
+  const view = e.target.closest('.cell-view');
+  if (!view) return;
+  if (e.target.closest('a[href]')) return;
+  const td = view.closest('td');
+  if (!td?.dataset?.col) return;
+  const tr = td.closest('tr');
+  const id = tr?.dataset?.id;
+  const colId = td.dataset.col;
+  if (!id) return;
+  const rowData = _hooks.getData();
+  const item = rowData.find((d) => d.id === id);
+  const col = columns.find((c) => c.id === colId);
+  if (!item || !col) return;
+  if (col.id === 'internalLinks') {
+    _hooks.openDrawer(id);
+    return;
+  }
+  startCellEdit(td, item, col);
+}
+function attachCellViewDelegationOnce() {
+  if (_cellViewDelegationBound) return;
+  _cellViewDelegationBound = true;
+  document.addEventListener('click', onContentAreaCellViewClick, true);
 }
 
 function notifyPeersIfAny() {
@@ -59,6 +106,7 @@ export function clearSelectionOnViewChange() {
 }
 
 export function renderTable(items, area) {
+  attachCellViewDelegationOnce();
   const sortColId = _hooks.getSortColId();
   const sortDir = _hooks.getSortDir();
   const contentArea = _getScrollEl();
@@ -143,9 +191,6 @@ export function renderTable(items, area) {
       view.style.minHeight = `${currentRowHeight}px`;
       const ideaPrefix = _hooks.isIdea(item) && col.id === 'title' ? '<span title="Idee" style="margin-right:4px">💡</span>' : '';
       view.innerHTML = ideaPrefix + renderCellValue(item, col);
-      view.onclick = () => {
-        if (!appSession.isReadOnly) startCellEdit(td, item, col);
-      };
       const edit = document.createElement('div');
       edit.className = 'cell-edit';
       edit.innerHTML = buildCellEditor(item, col);
@@ -159,12 +204,16 @@ export function renderTable(items, area) {
         }
       });
       if (col.type !== 'multiselect') {
-        editorEl?.addEventListener('blur', () => commitCellEdit(td, item, col));
-        editorEl?.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' && col.type !== 'text') commitCellEdit(td, item, col);
-        });
         if (editorEl?.tagName === 'SELECT') {
-          editorEl.addEventListener('change', () => commitCellEdit(td, item, col));
+          // Nur change + expliziter Wert: blur/re-read nach Layout ist bei <select> unzuverlässig; ohne change: Escape zum Abbrechen.
+          editorEl.addEventListener('change', (e) => {
+            void commitCellEdit(td, item, col, e.target.value);
+          });
+        } else {
+          editorEl?.addEventListener('blur', () => commitCellEdit(td, item, col));
+          editorEl?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && col.type !== 'text') commitCellEdit(td, item, col);
+          });
         }
       }
       edit.querySelector('.cell-ms-apply')?.addEventListener('click', (e) => {
@@ -302,7 +351,19 @@ export async function bulkDelete() {
     `${ids.length} Eintrag${ids.length > 1 ? 'e' : ''} wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`,
     async () => {
       setSyncStatus('loading', 'Lösche...');
-      const { error } = await appSession.sb.from('content_items').delete().in('id', ids);
+      let error;
+      try {
+        const res = await withTimeout(
+          appSession.sb.from('content_items').delete().in('id', ids),
+          MUTATION_TIMEOUT_MS,
+          '__timeout__'
+        );
+        error = res.error;
+      } catch (e) {
+        setSyncStatus('error', 'Fehler');
+        toast(e?.message === '__timeout__' ? 'Zeitüberschreitung beim Löschen.' : `Fehler: ${e?.message || e}`);
+        return;
+      }
       if (error) {
         setSyncStatus('error', 'Fehler');
         toast(`Fehler: ${error.message}`);
@@ -412,16 +473,21 @@ export async function applyBulkEdit() {
         item[colId] = [...vals];
       });
       const row = _hooks.itemToRow(item);
-      const { error } = await appSession.sb.from('content_items').update(row).eq('id', id);
-      if (error) {
+      try {
+        const { error } = await updateContentItemRow(row, id);
+        if (error) {
+          errorCount++;
+          console.error('Bulk edit update failed', id, error);
+        }
+      } catch (e) {
         errorCount++;
-        console.error('Bulk edit update failed', id, error);
+        console.error('Bulk edit update failed', id, e);
       }
     }
     await _hooks.loadData({ quiet: true });
     clearBulkSelection();
     if (errorCount > 0) {
-      toast(`⚠ ${errorCount} Fehler beim Speichern`);
+      toast(`⚠ ${errorCount} Fehler beim Speichern (ggf. Zeitüberschreitung — Tab neu laden)`);
       setSyncStatus('error', 'Fehler');
     } else {
       toast(`✅ ${ids.length} Einträge aktualisiert`);
@@ -430,7 +496,11 @@ export async function applyBulkEdit() {
     }
   } catch (e) {
     setSyncStatus('error', 'Fehler');
-    toast(`Mehrfachänderung fehlgeschlagen: ${e?.message || e}`);
+    toast(
+      e?.message === '__timeout__'
+        ? 'Zeitüberschreitung beim Laden nach Speichern. Bitte Seite neu laden.'
+        : `Mehrfachänderung fehlgeschlagen: ${e?.message || e}`
+    );
   } finally {
     _hooks.setBulkOperationRunning(false);
   }
@@ -535,7 +605,10 @@ function cancelCellEdit(td) {
   td.classList.remove('cell-ms-wrap');
 }
 
-async function commitCellEdit(td, item, col) {
+/**
+ * @param {unknown} [valueFromControl] — bei <select> von `change`: e.target.value (nicht aus DOM nach async lesen)
+ */
+async function commitCellEdit(td, item, col, valueFromControl) {
   const data = _hooks.getData();
   /** Nach loadData() im Hintergrund zeigt `item` ggf. auf ein altes Objekt — immer die aktuelle Zeile im Array nutzen. */
   const live = data.find((d) => d.id === item.id) || item;
@@ -549,37 +622,64 @@ async function commitCellEdit(td, item, col) {
     const _ca = _getScrollEl();
     if (_ca) _preservedScroll = _ca.scrollTop;
     const dbPayload = _hooks.itemToRow(live);
-    const { error } = await appSession.sb.from('content_items').update(dbPayload).eq('id', live.id);
+    let resMs;
+    try {
+      resMs = await updateContentItemRow(dbPayload, live.id);
+    } catch (e) {
+      toast(e?.message === '__timeout__' ? 'Zeitüberschreitung beim Speichern.' : `Fehler: ${e?.message || e}`);
+      return;
+    }
+    const { error } = resMs;
     if (error) {
       toast(`Fehler beim Speichern: ${error.message}`);
       return;
     }
     live.updatedAt = new Date().toISOString();
-    const view = td.querySelector('.cell-view');
-    if (view) view.innerHTML = renderCellValue(live, col);
-    setSyncStatus('ok', `${data.length} Einträge`);
+    // Nach await kann Realtime/stiller Reload schon render() ausgeführt haben — td zeigt dann ins Leere.
+    // Immer neu rendern (Scroll bleibt über _preservedScroll).
+    _hooks.render();
+    setSyncStatus('ok', `${_hooks.getData().length} Einträge`);
     notifyPeersIfAny();
+    return;
+  }
+  let newVal;
+  if (valueFromControl !== undefined) {
+    newVal = String(valueFromControl);
+  } else {
+    const input = td.querySelector('.cell-edit input, .cell-edit select, .cell-edit textarea');
+    if (!input) {
+      td.classList.remove('editing');
+      td.classList.remove('cell-ms-wrap');
+      return;
+    }
+    newVal = input.value;
+  }
+  if (String(live[col.id] || '') === newVal) {
+    td.classList.remove('editing');
+    td.classList.remove('cell-ms-wrap');
     return;
   }
   td.classList.remove('editing');
   td.classList.remove('cell-ms-wrap');
-  const input = td.querySelector('.cell-edit input, .cell-edit select');
-  if (!input) return;
-  const newVal = input.value;
-  if (String(live[col.id] || '') === newVal) return;
   live[col.id] = newVal;
   const _ca = _getScrollEl();
   if (_ca) _preservedScroll = _ca.scrollTop;
   const dbPayload = _hooks.itemToRow(live);
-  const { error } = await appSession.sb.from('content_items').update(dbPayload).eq('id', live.id);
+  let resCell;
+  try {
+    resCell = await updateContentItemRow(dbPayload, live.id);
+  } catch (e) {
+    toast(e?.message === '__timeout__' ? 'Zeitüberschreitung beim Speichern.' : `Fehler: ${e?.message || e}`);
+    return;
+  }
+  const { error } = resCell;
   if (error) {
     toast(`Fehler beim Speichern: ${error.message}`);
     return;
   }
   live.updatedAt = new Date().toISOString();
-  const view = td.querySelector('.cell-view');
-  if (view) view.innerHTML = renderCellValue(live, col);
-  setSyncStatus('ok', `${data.length} Einträge`);
+  _hooks.render();
+  setSyncStatus('ok', `${_hooks.getData().length} Einträge`);
   notifyPeersIfAny();
 }
 
@@ -601,6 +701,7 @@ let resizing = null;
 function addColResizeHandles() {
   document.querySelectorAll('thead th').forEach((th) => {
     if (th.classList.contains('th-actions')) return;
+    if (th.querySelector('.col-resize-handle')) return;
     const handle = document.createElement('div');
     handle.className = 'col-resize-handle';
     th.appendChild(handle);

@@ -7,6 +7,23 @@ import { withTimeout } from './lib.js';
 
 const LOAD_DATA_TIMEOUT_MS = 25000;
 
+/** Nach Tab-Wechsel / Hintergrund oft abgelaufenes JWT — einmal refreshSession und Select wiederholen. */
+function isLikelyAuthError(err) {
+  if (!err) return false;
+  const st = err.status ?? err.statusCode;
+  if (st === 401 || st === 403) return true;
+  const msg = String(err.message || '').toLowerCase();
+  const code = String(err.code || '');
+  if (code === 'PGRST301') return true;
+  if (msg.includes('jwt') || msg.includes('expired') || msg.includes('invalid_grant')) return true;
+  return false;
+}
+
+function shortLoadError(err) {
+  const m = err?.message || String(err);
+  return m.length > 90 ? `${m.slice(0, 87)}…` : m;
+}
+
 export function rowToItem(row) {
   const cf = row.custom_fields || {};
   const item = {
@@ -44,10 +61,19 @@ export function rowToItem(row) {
     isIdeaFlag: cf.isIdeaFlag || false,
     updatedAt: row.updated_at,
   };
+  /**
+   * custom_fields (JSON) darf keine Top-Level-Spalten aus `content_items` überschreiben.
+   * Ältere Daten / Fehler können z. B. `format` doppelt im JSON haben — dann war nach Realtime/Reload
+   * immer der alte JSON-Wert sichtbar, obwohl die echte Spalte in der DB schon aktualisiert war.
+   */
+  const CF_DO_NOT_OVERRIDE = new Set([
+    'topic', 'phase', 'createdBy', 'potentialLinks', 'potentialLinksText', 'isIdeaFlag',
+    'format', 'persona', 'owner', 'mainKw', 'kws', 'url', 'notes', 'date', 'title',
+    'internalLinks', 'id', 'updatedAt',
+  ]);
   Object.keys(cf).forEach((k) => {
-    if (!['topic', 'phase', 'createdBy', 'potentialLinks', 'potentialLinksText', 'isIdeaFlag'].includes(k)) {
-      item[k] = cf[k];
-    }
+    if (CF_DO_NOT_OVERRIDE.has(k)) return;
+    item[k] = cf[k];
   });
   return item;
 }
@@ -101,6 +127,7 @@ export function itemToRow(item, options = {}) {
  * @param {() => void} ctx.render
  * @param {boolean} [ctx.quiet] — kein Sync-Status „Lade…“ / „OK“
  * @param {() => boolean} [ctx.isStale] — bei quiet: true = verwerfen (ältere parallele Anfrage)
+ * @param {boolean} [ctx._authRetryDone] — intern: nach refreshSession nur ein zweiter Versuch
  */
 export async function loadData(ctx) {
   const {
@@ -110,6 +137,7 @@ export async function loadData(ctx) {
     render,
     quiet = false,
     isStale,
+    _authRetryDone = false,
   } = ctx;
   if (!quiet) setSyncStatus('loading', 'Lade…');
   try {
@@ -119,8 +147,14 @@ export async function loadData(ctx) {
       '__timeout__'
     );
     if (error) {
-      if (!quiet) setSyncStatus('error', 'Fehler');
-      return;
+      if (!_authRetryDone && isLikelyAuthError(error)) {
+        const { error: refreshErr } = await sb.auth.refreshSession();
+        if (!refreshErr) {
+          return loadData({ ...ctx, _authRetryDone: true });
+        }
+      }
+      console.error('loadData Supabase', error);
+      throw new Error(error.message || 'Laden fehlgeschlagen');
     }
     if (quiet && isStale?.()) return;
     const mapped = (rows || []).map(rowToItem);
@@ -129,9 +163,9 @@ export async function loadData(ctx) {
     render();
   } catch (e) {
     console.error('loadData', e);
-    if (!quiet) {
-      setSyncStatus('error', e?.message === '__timeout__' ? 'Zeitüberschreitung' : 'Fehler');
-    }
+    const msg = e?.message === '__timeout__' ? 'Zeitüberschreitung' : shortLoadError(e);
+    setSyncStatus('error', msg);
+    throw e;
   }
 }
 

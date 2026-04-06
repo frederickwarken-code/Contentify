@@ -166,6 +166,12 @@ async function loadData(options = {}) {
   });
 }
 
+/** Hintergrund-Reload ohne Serialisierung — eine hängende Promise blockiert sonst alle folgenden. */
+function enqueueQuietReloadData() {
+  if (!appSession.currentUser) return;
+  void loadData({ quiet: true }).catch((e) => console.error('quiet reload', e));
+}
+
 /** Tab-eigene ID für BroadcastChannel (jeder Tab hat eigenes sessionStorage). */
 function getContentSyncTabId() {
   let id = sessionStorage.getItem('contentify_sync_tab');
@@ -180,12 +186,6 @@ function getContentSyncTabId() {
 
 let contentSyncChannel = null;
 
-/** Hintergrund-Reload ohne Serialisierung — eine hängende Promise blockiert sonst alle folgenden. */
-function enqueueQuietReloadData() {
-  if (!appSession.currentUser) return;
-  void loadData({ quiet: true }).catch((e) => console.error('quiet reload', e));
-}
-
 function initContentSyncChannel() {
   if (typeof BroadcastChannel === 'undefined') return;
   try {
@@ -199,7 +199,7 @@ function initContentSyncChannel() {
   } catch (e) { /* ignore */ }
 }
 
-/** Andere Browser-Tabs: BroadcastChannel + localStorage-Bump (`storage`-Event nur in anderen Tabs). */
+/** Andere Tabs benachrichtigen: BroadcastChannel + localStorage (storage-Event nur in anderen Tabs). */
 function notifyOtherTabsContentChanged() {
   try {
     contentSyncChannel?.postMessage({ type: 'items-mutated', source: getContentSyncTabId() });
@@ -207,6 +207,58 @@ function notifyOtherTabsContentChanged() {
   try {
     localStorage.setItem(CONTENT_SYNC_BUMP_KEY, String(Date.now()));
   } catch (e) { /* ignore */ }
+}
+
+window.addEventListener('storage', (e) => {
+  if (e.key !== CONTENT_SYNC_BUMP_KEY || e.newValue == null) return;
+  if (!appSession.currentUser) return;
+  enqueueQuietReloadData();
+});
+
+/**
+ * Nach Tab-Rückkehr: Session refreshen, hängende Zellen-Edits bereinigen, neu zeichnen.
+ * (Realtime nicht bei jedem Sichtbar-werden neu abonnieren — das erzeugt nur Last und half nicht.)
+ */
+function runTabReturnRecovery() {
+  void (async () => {
+    /** Im Hintergrund-Tab laufen Auto-Refresh-Timer oft nicht; JWT kann ablaufen. getSession() ist nur Cache — explizit neu holen. */
+    try {
+      const { error } = await appSession.sb?.auth?.refreshSession?.() ?? { error: null };
+      if (error) console.warn('refreshSession nach Tab-Rückkehr', error);
+    } catch (e) {
+      console.warn('refreshSession nach Tab-Rückkehr', e);
+    }
+    const shell = document.getElementById('appShell');
+    const ae = document.activeElement;
+    if (ae && typeof ae.blur === 'function' && shell?.contains(ae)) {
+      ae.blur();
+    }
+    document.querySelectorAll('#tBody td.editing').forEach((td) => {
+      td.classList.remove('editing', 'cell-ms-wrap');
+    });
+    preserveTableScrollPosition();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          render();
+        } catch (e) {
+          console.error('render after tab return', e);
+        }
+      });
+    });
+  })();
+}
+
+function initTabReturnRecovery() {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !appSession.currentUser) return;
+    runTabReturnRecovery();
+  });
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && appSession.currentUser) {
+      runTabReturnRecovery();
+    }
+  });
 }
 
 /** Realtime: debounced (viele Events), dann in die Reload-Kette — kein Dauer-„Lade…“. */
@@ -219,61 +271,10 @@ function scheduleDebouncedContentReload() {
   }, 450);
 }
 
-window.addEventListener('storage', (e) => {
-  if (e.key !== CONTENT_SYNC_BUMP_KEY || e.newValue == null) return;
-  if (!appSession.currentUser) return;
-  enqueueQuietReloadData();
-});
-
 /**
- * Realtime liefert die betroffene Zeile — ohne vollen Re-Fetch (vermeidet Race: alte SELECT-Antwort überschreibt neue Daten).
- * @returns {boolean} true wenn angewendet
+ * Realtime: Kein In-Place-Patch mehr — nur gedrosselter Voll-Fetch wie nach F5.
+ * Der Patch-Pfad war fehleranfällig (Merge, Timing, zweite Tabs); `select *` ist die eine Quelle der Wahrheit.
  */
-function applyRealtimeContentPatch(p) {
-  const ev = String(p.eventType || p.event || '').toUpperCase();
-  try {
-    if (ev === 'INSERT' && p.new?.id) {
-      const item = rowToItem(p.new);
-      if (!data.some((d) => d.id === item.id)) data.push(item);
-      render();
-      return true;
-    }
-    if (ev === 'UPDATE' && p.new?.id) {
-      const patch = rowToItem(p.new);
-      const idx = data.findIndex((d) => d.id === patch.id);
-      if (idx >= 0) {
-        const existing = data[idx];
-        const incT = patch.updatedAt || p.new.updated_at;
-        const curT = existing.updatedAt;
-        if (incT && curT) {
-          try {
-            if (new Date(incT).getTime() <= new Date(curT).getTime()) {
-              return true;
-            }
-          } catch (e) { /* ignore */ }
-        }
-        // In-place: keine neue Objekt-Referenz (sonst verwaiste `live`-Zeiger bei offenem Zellen-Edit, v. a. mit 2 Tabs).
-        for (const k of Object.keys(patch)) {
-          existing[k] = patch[k];
-        }
-      } else {
-        data.push(patch);
-      }
-      render();
-      return true;
-    }
-    if (ev === 'DELETE' && p.old?.id) {
-      const id = p.old.id;
-      data = data.filter((d) => d.id !== id);
-      render();
-      return true;
-    }
-  } catch (e) {
-    console.error('applyRealtimeContentPatch', e);
-  }
-  return false;
-}
-
 function subscribeRealtime() {
   const presenceColors = ['#e03131', '#1971c2', '#2f9e44', '#e8590c', '#9b4dca', '#f0b429', '#0ca678', '#d6336c'];
   const myColor = presenceColors[Math.abs(appSession.currentUser.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % presenceColors.length];
@@ -284,9 +285,7 @@ function subscribeRealtime() {
       const icons = { INSERT: '✨', UPDATE: '✏️', DELETE: '🗑️' };
       const et = String(p.eventType || p.event || '').toUpperCase();
       showActivity(icons[et] || '●', p.new?.title || p.old?.title || 'Eintrag');
-      if (!applyRealtimeContentPatch(p)) {
-        scheduleDebouncedContentReload();
-      }
+      scheduleDebouncedContentReload();
     },
     onAppSettingsEvent: async (p) => {
       if (p.new?.key === 'columns' && Array.isArray(p.new?.value)) {
@@ -294,8 +293,12 @@ function subscribeRealtime() {
         render();
         toast('🔄 Kategorien aktualisiert');
         void (async () => {
-          await loadData({ quiet: true });
-          await runPruneStaleCategoryValues();
+          try {
+            await loadData({ quiet: true });
+            await runPruneStaleCategoryValues();
+          } catch (e) {
+            console.error('Nach Kategorien-Update', e);
+          }
         })();
       }
     },
@@ -327,6 +330,8 @@ function renderOnlineUsers() {
 // ═══════════════════════════════════════════
 function showActivity(icon, text) {
   const panel = document.getElementById('activityPanel');
+  if (!panel) return;
+  while (panel.children.length >= 6) panel.removeChild(panel.firstChild);
   const pill = document.createElement('div');
   pill.className = 'activity-pill';
   pill.innerHTML = `<span>${icon}</span><span style="flex:1;color:var(--text-muted)">${esc(text)}</span>`;
@@ -338,7 +343,7 @@ function showActivity(icon, text) {
 // FILTER & SORT
 // ═══════════════════════════════════════════
 function getFiltered() {
-  const q = document.getElementById('searchInput').value.toLowerCase();
+  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
   let items = data.filter(d => {
     if (ideaMode === 'hide' && isIdea(d)) return false;
     if (ideaMode === 'only' && !isIdea(d)) return false;
@@ -487,24 +492,30 @@ function toggleIdeas() { setIdeaMode(showIdeas ? 'hide' : 'show'); }
 // RENDER MAIN
 // ═══════════════════════════════════════════
 function render() {
-  renderSidebar();
-  if (currentView==='map') {
-    // If map is already rendered with good dimensions, just rebuild graph
-    const existingWrap = document.getElementById('mapWrap');
-    const existingW = existingWrap?.offsetWidth;
-    const existingH = existingWrap?.offsetHeight;
-    if(existingWrap && existingW > 100 && existingH > 100) {
-      buildGraph(); // dimensions already good, skip HTML rebuild
-    } else {
-      renderMap(); // first load or bad dimensions — full rebuild
+  try {
+    renderSidebar();
+    if (currentView==='map') {
+      // If map is already rendered with good dimensions, just rebuild graph
+      const existingWrap = document.getElementById('mapWrap');
+      const existingW = existingWrap?.offsetWidth;
+      const existingH = existingWrap?.offsetHeight;
+      if(existingWrap && existingW > 100 && existingH > 100) {
+        buildGraph(); // dimensions already good, skip HTML rebuild
+      } else {
+        renderMap(); // first load or bad dimensions — full rebuild
+      }
+      return;
     }
-    return;
+    const items = getFiltered();
+    const area = document.getElementById('contentArea');
+    if (!area) return;
+    if (!items.length) { area.innerHTML=`<div class="empty"><div style="font-size:32px">📭</div><p>Keine Einträge.</p></div>`; return; }
+    if (currentView==='table') renderTable(items, area);
+    else renderKanban(items, area);
+  } catch (e) {
+    console.error('render', e);
+    toast('Anzeige-Fehler — bitte Seite neu laden (F5).');
   }
-  const items = getFiltered();
-  const area = document.getElementById('contentArea');
-  if (!items.length) { area.innerHTML=`<div class="empty"><div style="font-size:32px">📭</div><p>Keine Einträge.</p></div>`; return; }
-  if (currentView==='table') renderTable(items, area);
-  else renderKanban(items, area);
 }
 
 // ── KANBAN ──
@@ -1832,7 +1843,13 @@ async function importItems(items) {
   setSyncStatus('loading', `Importiere ${toInsert.length} Einträge…`);
   const {error} = await appSession.sb.from('content_items').insert(toInsert);
   if(error) { setSyncStatus('error','Fehler'); toast('Import-Fehler: '+error.message); return; }
-  await loadData({ quiet: true });
+  try {
+    await loadData({ quiet: true });
+  } catch (e) {
+    setSyncStatus('error', e?.message?.slice(0, 80) || 'Fehler');
+    toast('Import: Liste konnte nicht neu geladen werden — ' + (e?.message || e));
+    return;
+  }
   setSyncStatus('ok', `${data.length} Einträge`);
   toast(`✅ ${toInsert.length} Einträge importiert${skipped?', '+skipped+' übersprungen':''}`);
   notifyOtherTabsContentChanged();
@@ -2098,7 +2115,12 @@ async function boot() {
       await loadProfile(appSession.currentUser.id);
       await syncColumnsFromSupabase(); // sync categories from Supabase
       initViewControls();
-      await loadData();
+      try {
+        await loadData();
+      } catch (e) {
+        console.error(e);
+        toast('Daten konnten nicht geladen werden. Bitte Seite neu laden (F5) oder neu anmelden.');
+      }
       await runPruneStaleCategoryValues();
       subscribeRealtime();
     }
@@ -2115,6 +2137,7 @@ async function boot() {
   });
 }
 initContentSyncChannel();
+initTabReturnRecovery();
 setTableAppHooks({
   getData: () => data,
   render,
