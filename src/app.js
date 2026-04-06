@@ -24,6 +24,7 @@ import {
 import {
   rowToItem,
   itemToRow as itemToDbRow,
+  loadData as loadContentFromSupabase,
 } from './app/data-pipeline.js';
 
 // ═══════════════════════════════════════════
@@ -191,15 +192,13 @@ async function runPruneStaleCategoryValues() {
 
 async function loadData(options = {}) {
   const { quiet = false } = options;
-  if (!quiet) setSyncStatus('loading', 'Lade…');
-  const { data: rows, error } = await appSession.sb.from('content_items').select('*').order('title');
-  if (error) {
-    if (!quiet) setSyncStatus('error', 'Fehler');
-    return;
-  }
-  data = rows.map(rowToItem);
-  if (!quiet) setSyncStatus('ok', `${data.length} Einträge`);
-  render();
+  await loadContentFromSupabase({
+    sb: appSession.sb,
+    setSyncStatus,
+    setData: (next) => { data = next; },
+    render,
+    quiet,
+  });
 }
 
 function subscribeRealtime() {
@@ -736,6 +735,7 @@ async function applyBulkMultiselect(colId, mode) {
     }
     setSyncStatus(errors ? 'error' : 'ok', errors ? 'Fehler' : `${ids.length} Einträge`);
     toast(errors ? `${errors} Fehler` : `✅ ${ids.length} Einträge aktualisiert`);
+    bulkOperationRunning = false;
     if (!errors) await loadData({ quiet: true });
   } catch (e) {
     setSyncStatus('error', 'Fehler');
@@ -783,6 +783,7 @@ async function applyBulkEdit() {
         console.error('Bulk edit update failed', id, error);
       }
     }
+    bulkOperationRunning = false;
     await loadData({ quiet: true });
     clearBulkSelection();
     if (errorCount > 0) {
@@ -2456,25 +2457,41 @@ function itemToRow(item, options = {}) {
   });
 }
 
+function _sortDataByTitle() {
+  data.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'de', { sensitivity: 'base' }));
+}
+
 async function saveEntry() {
   try {
     const vals = getDrawerValues();
     if (!vals.title) { toast('Bitte Titel eingeben'); return; }
     const row = itemToRow({ ...(drawerItem || {}), ...vals }, { forInsert: !drawerItem });
     setSyncStatus('loading','Speichere…');
-    // Save scroll before DB write (realtime will trigger re-render)
+    // Save scroll before DB write (realtime may still trigger re-render)
     const _seCa = _getScrollEl();
     if(_seCa) _preservedScroll = _seCa.scrollTop;
-    let error;
+    let res;
     if (drawerItem) {
-      const r = await appSession.sb.from('content_items').update(row).eq('id', drawerItem.id);
-      error = r.error;
+      res = await appSession.sb.from('content_items').update(row).eq('id', drawerItem.id).select('*').maybeSingle();
     } else {
-      const r = await appSession.sb.from('content_items').insert(row);
-      error = r.error;
+      res = await appSession.sb.from('content_items').insert(row).select('*').maybeSingle();
     }
+    const { data: savedRow, error } = res;
     if (error) { setSyncStatus('error','Fehler'); toast('Fehler: '+error.message); return; }
-    await loadData();
+    if (savedRow) {
+      const savedItem = rowToItem(savedRow);
+      if (drawerItem) {
+        const idx = data.findIndex((d) => d.id === drawerItem.id);
+        if (idx >= 0) data[idx] = savedItem;
+      } else {
+        data.push(savedItem);
+        _sortDataByTitle();
+      }
+      render();
+    } else {
+      // Kein Row-Return (z. B. RLS) — Fallback: volle Liste (kann bei schwachem Netz länger dauern)
+      await loadData({ quiet: true });
+    }
     setSyncStatus('ok', 'Gespeichert');
     closeDrawer();
     toast(drawerItem ? 'Gespeichert ✓' : 'Erstellt ✓');

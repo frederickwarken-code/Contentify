@@ -5,7 +5,8 @@ Nächste Schritte (Stand):
 2. ✅ **Auth + Profil + Nutzerverwaltung** → `session.js` + `auth.js`; `app.js` nutzt `appSession` und importiert Auth-Funktionen.
 3. 🔄 **Daten-Pipeline** (`src/app/data-pipeline.js`):
    - ✅ **Schritt 1 erledigt:** `rowToItem` + `itemToRow` ausgelagert; `app.js` hat dünne Wrapper (`itemToRow` übergibt `appSession` an das Modul).
-   - ⏭ **Nächster Schritt:** `loadData` ins Modul (mit klarer Übergabe von `sb`, `setSyncStatus`, Daten-Setter, `render`) — erst danach Realtime (`subscribeRealtime`) anfassen.
+   - ✅ **Schritt 2 erledigt:** `loadData` in `data-pipeline.js`; `app.js` übergibt `sb`, `setSyncStatus`, Daten-Setter, `render`.
+  - ⏭ **Nächster Schritt:** Realtime (`subscribeRealtime`) — weiter inkrementell, nicht alles auf einmal.
    - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
 5. ⏭ **UI-Ansichten:** Tabelle → Kanban → Map (je nach Bedarf; Map oft der größte Brocken).

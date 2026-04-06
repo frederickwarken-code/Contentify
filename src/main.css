@@ -184,7 +184,7 @@ td.editing.cell-ms-wrap{overflow:visible;z-index:8;position:relative}
 /* Checkbox column */
 .th-check{width:32px;cursor:default!important;text-align:center!important}
 .td-check{width:32px;text-align:center;vertical-align:middle}
-.row-check{cursor:pointer;width:14px;height:14px;accent-color:var(--accent)}
+.row-check{cursor:pointer;width:14px;height:14px;accent-color:var(--accent);touch-action:manipulation}
 tr.row-selected{background:var(--accent-light)!important}
 tr.row-selected[data-idea="1"]{background:rgba(240,180,41,.18)!important}
 

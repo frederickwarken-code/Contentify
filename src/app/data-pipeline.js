@@ -1,6 +1,6 @@
 /**
- * Daten-Übersetzer zwischen DB-Zeilen und App-Objekten.
- * Kein UI, kein Realtime – nur Mapping.
+ * Daten-Pipeline: Mapping DB ↔ App + Laden der Tabelle `content_items`.
+ * Kein Realtime hier — nur `select` + Mapping + Callbacks.
  */
 
 export function rowToItem(row) {
@@ -86,4 +86,33 @@ export function itemToRow(item, options = {}) {
     },
     ...(forInsert ? { created_by: currentUser?.id } : {}),
   };
+}
+
+/**
+ * Lädt alle Einträge aus Supabase, mappt sie in App-Objekte und ruft `render` auf.
+ * @param {object} ctx
+ * @param {import('@supabase/supabase-js').SupabaseClient} ctx.sb
+ * @param {(type: string, msg?: string) => void} ctx.setSyncStatus
+ * @param {(items: object[]) => void} ctx.setData
+ * @param {() => void} ctx.render
+ * @param {boolean} [ctx.quiet] — kein Sync-Status „Lade…“ / „OK“
+ */
+export async function loadData(ctx) {
+  const {
+    sb,
+    setSyncStatus,
+    setData,
+    render,
+    quiet = false,
+  } = ctx;
+  if (!quiet) setSyncStatus('loading', 'Lade…');
+  const { data: rows, error } = await sb.from('content_items').select('*').order('title');
+  if (error) {
+    if (!quiet) setSyncStatus('error', 'Fehler');
+    return;
+  }
+  const mapped = (rows || []).map(rowToItem);
+  setData(mapped);
+  if (!quiet) setSyncStatus('ok', `${mapped.length} Einträge`);
+  render();
 }
