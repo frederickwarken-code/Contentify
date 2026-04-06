@@ -25,6 +25,7 @@ import {
   rowToItem,
   itemToRow as itemToDbRow,
   loadData as loadContentFromSupabase,
+  subscribeRealtimeChannels,
 } from './app/data-pipeline.js';
 
 // ═══════════════════════════════════════════
@@ -202,32 +203,22 @@ async function loadData(options = {}) {
 }
 
 function subscribeRealtime() {
-  // Prevent duplicate subscriptions (SIGNED_IN can fire more than once).
-  if (realtimeChannels.length) {
-    realtimeChannels.forEach((ch) => {
-      try { appSession.sb.removeChannel(ch); } catch (e) { /* ignore */ }
-    });
-    realtimeChannels = [];
-  }
-
-  // Content items realtime
-  const contentChannel = appSession.sb.channel('cm_rt')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'content_items' }, async (p) => {
+  const presenceColors = ['#e03131', '#1971c2', '#2f9e44', '#e8590c', '#9b4dca', '#f0b429', '#0ca678', '#d6336c'];
+  const myColor = presenceColors[Math.abs(appSession.currentUser.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % presenceColors.length];
+  subscribeRealtimeChannels({
+    sb: appSession.sb,
+    channels: realtimeChannels,
+    onContentItemsEvent: async (p) => {
       // Während Bulk-Updates: kein paralleles loadData (sonst stapeln sich „Lade…“/„Speichere…“ und die UI hängt).
       if (bulkOperationRunning) return;
       await loadData();
       const icons = { INSERT: '✨', UPDATE: '✏️', DELETE: '🗑️' };
       showActivity(icons[p.eventType] || '●', p.new?.title || p.old?.title || 'Eintrag');
-    })
-    .subscribe();
-  realtimeChannels.push(contentChannel);
-
-  // Categories realtime — sync when any user saves columns
-  const settingsChannel = appSession.sb.channel('cm_settings')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, async (p) => {
+    },
+    onAppSettingsEvent: async (p) => {
       if (p.new?.key === 'columns' && Array.isArray(p.new?.value)) {
         columns = p.new.value;
-        columns.forEach(col => { if (!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
+        columns.forEach((col) => { if (!SYSTEM_COLUMN_IDS.includes(col.id)) delete col.locked; });
         localStorage.setItem(COL_STORE, JSON.stringify(columns));
         render();
         toast('🔄 Kategorien aktualisiert');
@@ -236,33 +227,17 @@ function subscribeRealtime() {
           await runPruneStaleCategoryValues();
         })();
       }
-    })
-    .subscribe();
-  realtimeChannels.push(settingsChannel);
-
-  // Presence — who is online
-  const presenceColors = ['#e03131', '#1971c2', '#2f9e44', '#e8590c', '#9b4dca', '#f0b429', '#0ca678', '#d6336c'];
-  const myColor = presenceColors[Math.abs(appSession.currentUser.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % presenceColors.length];
-  const presenceChannel = appSession.sb.channel('cm_presence', { config: { presence: { key: appSession.currentUser.id } } });
-  presenceChannel
-    .on('presence', { event: 'sync' }, () => {
-      const state = presenceChannel.presenceState();
-      onlineUsers = {};
-      Object.entries(state).forEach(([uid, presences]) => {
-        const p = presences[0];
-        if (p) onlineUsers[uid] = { display_name: p.display_name, color: p.color };
-      });
-      renderOnlineUsers();
-    })
-    .subscribe(async status => {
-      if (status === 'SUBSCRIBED') {
-        await presenceChannel.track({
-          display_name: appSession.currentProfile?.display_name || appSession.currentUser.email,
-          color: myColor,
-        });
-      }
-    });
-  realtimeChannels.push(presenceChannel);
+    },
+    presence: {
+      userId: appSession.currentUser.id,
+      displayName: appSession.currentProfile?.display_name || appSession.currentUser.email,
+      color: myColor,
+      onPresenceSync: (map) => {
+        onlineUsers = map;
+        renderOnlineUsers();
+      },
+    },
+  });
 }
 
 function renderOnlineUsers() {
@@ -2804,12 +2779,37 @@ function attachInlineHandlers() {
   });
 }
 
+/** Pro Tab eigener Supabase-Auth-Key: BroadcastChannel heißt wie storageKey — sonst syncen alle Tabs die Session, egal ob localStorage oder sessionStorage. */
+function getAuthStorageKeyForBrowserTab() {
+  const META = 'contentify_sb_auth_storage_key';
+  let key = sessionStorage.getItem(META);
+  if (!key) {
+    let ref = 'project';
+    try {
+      ref = new URL(SUPABASE_URL).hostname.split('.')[0];
+    } catch (_) { /* ignore */ }
+    const id = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    key = `sb-${ref}-auth-token-${id}`;
+    sessionStorage.setItem(META, key);
+  }
+  return key;
+}
+
 async function boot() {
   if (typeof SUPABASE_URL==='undefined'||SUPABASE_URL==='YOUR_SUPABASE_URL') {
     document.body.innerHTML='<div style="padding:40px;font-family:sans-serif;color:#c0392b">⚠️ Bitte config.js ausfüllen!</div>';
     return;
   }
-  appSession.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  appSession.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      storage: window.sessionStorage,
+      storageKey: getAuthStorageKeyForBrowserTab(),
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  });
   loadColumns();
 
   // One-time cleanup: remove bad map positions saved by old buggy builds

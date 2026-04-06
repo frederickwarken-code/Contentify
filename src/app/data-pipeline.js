@@ -1,6 +1,6 @@
 /**
- * Daten-Pipeline: Mapping DB ↔ App + Laden der Tabelle `content_items`.
- * Kein Realtime hier — nur `select` + Mapping + Callbacks.
+ * Daten-Pipeline: Mapping DB ↔ App, `loadData`, Supabase-Realtime-Kanäle.
+ * App-spezifische Reaktionen (Spalten, Bulk, UI) kommen per Callbacks aus `app.js`.
  */
 
 export function rowToItem(row) {
@@ -115,4 +115,57 @@ export async function loadData(ctx) {
   setData(mapped);
   if (!quiet) setSyncStatus('ok', `${mapped.length} Einträge`);
   render();
+}
+
+/**
+ * Registriert Realtime: `content_items`, `app_settings`, Presence.
+ * Entfernt zuvor alle Kanäle in `channels` (verhindert Doppel-Subscribe bei erneutem Login).
+ */
+export function subscribeRealtimeChannels(ctx) {
+  const {
+    sb,
+    channels,
+    onContentItemsEvent,
+    onAppSettingsEvent,
+    presence,
+  } = ctx;
+
+  if (channels.length) {
+    channels.forEach((ch) => {
+      try { sb.removeChannel(ch); } catch (e) { /* ignore */ }
+    });
+    channels.length = 0;
+  }
+
+  const contentChannel = sb.channel('cm_rt')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'content_items' }, onContentItemsEvent)
+    .subscribe();
+  channels.push(contentChannel);
+
+  const settingsChannel = sb.channel('cm_settings')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, onAppSettingsEvent)
+    .subscribe();
+  channels.push(settingsChannel);
+
+  const { userId, displayName, color, onPresenceSync } = presence;
+  const presenceChannel = sb.channel('cm_presence', { config: { presence: { key: userId } } });
+  presenceChannel
+    .on('presence', { event: 'sync' }, () => {
+      const state = presenceChannel.presenceState();
+      const onlineUsers = {};
+      Object.entries(state).forEach(([uid, presences]) => {
+        const p = presences[0];
+        if (p) onlineUsers[uid] = { display_name: p.display_name, color: p.color };
+      });
+      onPresenceSync(onlineUsers);
+    })
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await presenceChannel.track({
+          display_name: displayName,
+          color,
+        });
+      }
+    });
+  channels.push(presenceChannel);
 }
