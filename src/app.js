@@ -6,6 +6,7 @@ import {
   MAP_PRESETS_KEY,
   MAP_POS_KEY,
   LEGACY_MAP_POSITIONS_KEY,
+  SB_AUTH_TAB_META_KEY,
 } from './app/storage-keys.js';
 import { defaultColumns, SYSTEM_COLUMN_IDS } from './app/columns-defaults.js';
 import { esc, toast, showConfirm, dlFile, closeExport, typeLabel, setSyncStatus } from './app/lib.js';
@@ -2779,10 +2780,10 @@ function attachInlineHandlers() {
   });
 }
 
-/** Pro Tab eigener Supabase-Auth-Key: BroadcastChannel heißt wie storageKey — sonst syncen alle Tabs die Session, egal ob localStorage oder sessionStorage. */
+/** Pro Tab eigener Supabase-Auth-Key: BroadcastChannel heißt wie storageKey — sonst syncen alle Tabs die Session, egal ob localStorage oder sessionStorage.
+ * Hinweis: „Tab duplizieren“ kopiert sessionStorage → gleicher Key wie Quelltab → Logout/Login kann den anderen Tab per Broadcast mitbeeinflussen. Zweites Konto: neuen Tab öffnen (nicht duplizieren). */
 function getAuthStorageKeyForBrowserTab() {
-  const META = 'contentify_sb_auth_storage_key';
-  let key = sessionStorage.getItem(META);
+  let key = sessionStorage.getItem(SB_AUTH_TAB_META_KEY);
   if (!key) {
     let ref = 'project';
     try {
@@ -2792,9 +2793,22 @@ function getAuthStorageKeyForBrowserTab() {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     key = `sb-${ref}-auth-token-${id}`;
-    sessionStorage.setItem(META, key);
+    sessionStorage.setItem(SB_AUTH_TAB_META_KEY, key);
   }
   return key;
+}
+
+/** Alte Default-Session aus localStorage entfernen (vor Multi-Tab-Umstellung); sonst kann die erste Anmeldung nach Reload unstabil wirken. */
+function removeLegacySupabaseAuthFromLocalStorage() {
+  try {
+    const ref = new URL(SUPABASE_URL).hostname.split('.')[0];
+    const legacy = `sb-${ref}-auth-token`;
+    if (localStorage.getItem(legacy) != null) {
+      localStorage.removeItem(legacy);
+      localStorage.removeItem(`${legacy}-user`);
+      localStorage.removeItem(`${legacy}-code-verifier`);
+    }
+  } catch (_) { /* ignore */ }
 }
 
 async function boot() {
@@ -2810,6 +2824,7 @@ async function boot() {
       autoRefreshToken: true,
     },
   });
+  removeLegacySupabaseAuthFromLocalStorage();
   loadColumns();
 
   // One-time cleanup: remove bad map positions saved by old buggy builds
@@ -2853,13 +2868,14 @@ async function boot() {
       await runPruneStaleCategoryValues();
       subscribeRealtime();
     }
-    if(event==='SIGNED_OUT'){
+    if (event === 'SIGNED_OUT') {
       realtimeChannels.forEach((ch) => {
         try { appSession.sb.removeChannel(ch); } catch (e) { /* ignore */ }
       });
       realtimeChannels = [];
-      appSession.currentUser=null;
-      document.getElementById('appShell').style.display='none';
+      appSession.currentUser = null;
+      appSession.currentProfile = null;
+      document.getElementById('appShell').style.display = 'none';
       document.getElementById('login-screen').classList.add('visible');
     }
   });

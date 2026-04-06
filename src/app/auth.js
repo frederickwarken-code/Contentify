@@ -1,7 +1,7 @@
 /**
  * Login, Session, Profil, Nutzer-Menü, Admin-Liste.
  */
-import { RECENT_ACCOUNTS_KEY } from './storage-keys.js';
+import { RECENT_ACCOUNTS_KEY, SB_AUTH_TAB_META_KEY } from './storage-keys.js';
 import { esc, toast, setSyncStatus } from './lib.js';
 import { appSession } from './session.js';
 
@@ -97,16 +97,44 @@ export function openAdminPanelFromMenu() {
   openAdminPanel();
 }
 
+const LOGOUT_TIMEOUT_MS = 12000;
+
+/** Wenn `signOut()` hängt (z. B. Lock/Netz), Session-Zeilen in diesem Tab entfernen. */
+function clearSupabaseSessionFromTabStorage() {
+  try {
+    const storageKey = sessionStorage.getItem(SB_AUTH_TAB_META_KEY);
+    if (!storageKey) return;
+    sessionStorage.removeItem(storageKey);
+    sessionStorage.removeItem(`${storageKey}-user`);
+    sessionStorage.removeItem(`${storageKey}-code-verifier`);
+  } catch (_) { /* ignore */ }
+}
+
 export async function doLogout(forceReload = false) {
   hideUserMenu();
   setSyncStatus('loading', 'Abmelden…');
+  let timedOut = false;
   try {
-    const { error } = await appSession.sb.auth.signOut();
+    const signOutPromise = appSession.sb.auth.signOut();
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('__logout_timeout__')), LOGOUT_TIMEOUT_MS);
+    });
+    const { error } = await Promise.race([signOutPromise, timeoutPromise]);
     if (error) throw error;
   } catch (e) {
-    toast('Logout-Fehler: ' + (e?.message || e));
+    if (e?.message === '__logout_timeout__') {
+      timedOut = true;
+      toast('Abmelden dauert zu lange — lokale Session wird entfernt.');
+      clearSupabaseSessionFromTabStorage();
+    } else {
+      toast('Logout-Fehler: ' + (e?.message || e));
+    }
   } finally {
     setSyncStatus('');
+    if (timedOut) {
+      location.reload();
+      return;
+    }
     if (forceReload) setTimeout(() => location.reload(), 150);
   }
 }
