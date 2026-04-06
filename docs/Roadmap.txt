@@ -1,14 +1,15 @@
-Aktueller Fokus: Modularisierung von `src/app.js` — **Daten-Pipeline** weiter Stück für Stück (nach früherem großen Auslagerungsversuch: nur kleine Schritte).
+Aktueller Fokus: Modularisierung von `src/app.js` — **UI-Ansichten** weiter (nach Tabelle: Kanban → Map).
 
 Nächste Schritte (Stand):
 1. ✅ Klein: `storage-keys.js`, `columns-defaults.js`, `lib.js` (Helfer: esc, toast, Dialog, Download, …).
 2. ✅ **Auth + Profil + Nutzerverwaltung** → `session.js` + `auth.js`; `app.js` nutzt `appSession` und importiert Auth-Funktionen.
-3. 🔄 **Daten-Pipeline** (`src/app/data-pipeline.js`):
+3. ✅ **Daten-Pipeline** (`src/app/data-pipeline.js`):
    - ✅ **Schritt 1 erledigt:** `rowToItem` + `itemToRow` ausgelagert; `app.js` hat dünne Wrapper (`itemToRow` übergibt `appSession` an das Modul).
    - ✅ **Schritt 2 erledigt:** `loadData` in `data-pipeline.js`; `app.js` übergibt `sb`, `setSyncStatus`, Daten-Setter, `render`.
   - ✅ **Schritt 3 erledigt:** Realtime-Kanäle in `data-pipeline.js` (`subscribeRealtimeChannels`); `app.js` übergibt Callbacks (Bulk, Spalten, Presence).
-  - ✅ **Spalten/Kategorien:** `src/app/columns.js` (Modal, LocalStorage, Supabase `app_settings`); `columns-defaults.js` unverändert separat.
-  - ⏭ **Nächster Schritt:** UI-Module (Tabelle → Kanban → Map) nach Priorität — oder Import/Export auslagern.
+   - ✅ **Spalten/Kategorien:** `src/app/columns.js` (Modal, LocalStorage, Supabase `app_settings`); `columns-defaults.js` unverändert separat.
+   - ✅ **Tabelle:** `src/app/table.js` + `field-normalize.js` (Auswahlwerte); `src/app.js` bindet `setTableAppHooks` (Daten, Sortierung, Bulk-Flag, `itemToRow`, Drawer).
+   - ⏭ **Nächster Schritt:** Kanban oder Map aus `app.js` auslagern — oder Import/Export.
    - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
 5. ⏭ **UI-Ansichten:** Tabelle → Kanban → Map (je nach Bedarf; Map oft der größte Brocken).

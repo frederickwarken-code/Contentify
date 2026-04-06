@@ -11,6 +11,8 @@ export const MAP_POS_KEY = 'contentify_map_pos_v2';
 export const LEGACY_MAP_POSITIONS_KEY = 'contentify_map_positions';
 /** sessionStorage: Name des Supabase-Auth-Schlüssels pro Tab (siehe `getAuthStorageKeyForBrowserTab` in app.js). */
 export const SB_AUTH_TAB_META_KEY = 'contentify_sb_auth_storage_key';
+/** Cross-Tab: Timestamp-Bump — andere Tabs hören auf `storage` und laden Daten neu. */
+export const CONTENT_SYNC_BUMP_KEY = 'contentify_content_sync_bump';
 
 (function migrateLegacyStorageKeys() {
   try {

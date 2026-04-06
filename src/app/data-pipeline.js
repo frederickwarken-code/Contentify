@@ -3,6 +3,10 @@
  * App-spezifische Reaktionen (Spalten, Bulk, UI) kommen per Callbacks aus `app.js`.
  */
 
+import { withTimeout } from './lib.js';
+
+const LOAD_DATA_TIMEOUT_MS = 25000;
+
 export function rowToItem(row) {
   const cf = row.custom_fields || {};
   const item = {
@@ -96,6 +100,7 @@ export function itemToRow(item, options = {}) {
  * @param {(items: object[]) => void} ctx.setData
  * @param {() => void} ctx.render
  * @param {boolean} [ctx.quiet] — kein Sync-Status „Lade…“ / „OK“
+ * @param {() => boolean} [ctx.isStale] — bei quiet: true = verwerfen (ältere parallele Anfrage)
  */
 export async function loadData(ctx) {
   const {
@@ -104,17 +109,30 @@ export async function loadData(ctx) {
     setData,
     render,
     quiet = false,
+    isStale,
   } = ctx;
   if (!quiet) setSyncStatus('loading', 'Lade…');
-  const { data: rows, error } = await sb.from('content_items').select('*').order('title');
-  if (error) {
-    if (!quiet) setSyncStatus('error', 'Fehler');
-    return;
+  try {
+    const { data: rows, error } = await withTimeout(
+      sb.from('content_items').select('*').order('title'),
+      LOAD_DATA_TIMEOUT_MS,
+      '__timeout__'
+    );
+    if (error) {
+      if (!quiet) setSyncStatus('error', 'Fehler');
+      return;
+    }
+    if (quiet && isStale?.()) return;
+    const mapped = (rows || []).map(rowToItem);
+    setData(mapped);
+    if (!quiet) setSyncStatus('ok', `${mapped.length} Einträge`);
+    render();
+  } catch (e) {
+    console.error('loadData', e);
+    if (!quiet) {
+      setSyncStatus('error', e?.message === '__timeout__' ? 'Zeitüberschreitung' : 'Fehler');
+    }
   }
-  const mapped = (rows || []).map(rowToItem);
-  setData(mapped);
-  if (!quiet) setSyncStatus('ok', `${mapped.length} Einträge`);
-  render();
 }
 
 /**
