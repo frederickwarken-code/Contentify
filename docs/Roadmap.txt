@@ -7,7 +7,8 @@ Nächste Schritte (Stand):
    - ✅ **Schritt 1 erledigt:** `rowToItem` + `itemToRow` ausgelagert; `app.js` hat dünne Wrapper (`itemToRow` übergibt `appSession` an das Modul).
    - ✅ **Schritt 2 erledigt:** `loadData` in `data-pipeline.js`; `app.js` übergibt `sb`, `setSyncStatus`, Daten-Setter, `render`.
   - ✅ **Schritt 3 erledigt:** Realtime-Kanäle in `data-pipeline.js` (`subscribeRealtimeChannels`); `app.js` übergibt Callbacks (Bulk, Spalten, Presence).
-  - ⏭ **Nächster Schritt:** bei Bedarf Spalten/Kategorien-Logik weiter aus `app.js` auslagern — oder UI-Module (Tabelle/Kanban/Map) nach Priorität.
+  - ✅ **Spalten/Kategorien:** `src/app/columns.js` (Modal, LocalStorage, Supabase `app_settings`); `columns-defaults.js` unverändert separat.
+  - ⏭ **Nächster Schritt:** UI-Module (Tabelle → Kanban → Map) nach Priorität — oder Import/Export auslagern.
    - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
 5. ⏭ **UI-Ansichten:** Tabelle → Kanban → Map (je nach Bedarf; Map oft der größte Brocken).
