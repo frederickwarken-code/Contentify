@@ -27,7 +27,7 @@ import {
   onNewColTypeChange,
   createColumn,
 } from './app/columns.js';
-import { esc, toast, showConfirm, dlFile, closeExport, setSyncStatus } from './app/lib.js';
+import { esc, toast, showConfirm, dlFile, closeExport, setSyncStatus, withTimeout } from './app/lib.js';
 import { appSession } from './app/session.js';
 import {
   toggleSignup,
@@ -2045,6 +2045,9 @@ function _sortDataByTitle() {
   data.sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'de', { sensitivity: 'base' }));
 }
 
+/** Kein Web-Standard — Kompromiss: genug für schwaches Mobilnetz, aber nicht ewig „Speichere…“. */
+const SAVE_NETWORK_TIMEOUT_MS = 15000;
+
 async function saveEntry() {
   try {
     const vals = getDrawerValues();
@@ -2054,11 +2057,19 @@ async function saveEntry() {
     // Save scroll before DB write (realtime may still trigger re-render)
     const _seCa = _getScrollEl();
     if(_seCa) _preservedScroll = _seCa.scrollTop;
+    const dbPromise = drawerItem
+      ? appSession.sb.from('content_items').update(row).eq('id', drawerItem.id).select('*').maybeSingle()
+      : appSession.sb.from('content_items').insert(row).select('*').maybeSingle();
     let res;
-    if (drawerItem) {
-      res = await appSession.sb.from('content_items').update(row).eq('id', drawerItem.id).select('*').maybeSingle();
-    } else {
-      res = await appSession.sb.from('content_items').insert(row).select('*').maybeSingle();
+    try {
+      res = await withTimeout(dbPromise, SAVE_NETWORK_TIMEOUT_MS, '__save_timeout__');
+    } catch (e) {
+      if (e?.message === '__save_timeout__') {
+        setSyncStatus('error', 'Zeitüberschreitung');
+        toast('Keine Antwort vom Server. Verbindung prüfen oder Seite neu laden (F5).');
+        return;
+      }
+      throw e;
     }
     const { data: savedRow, error } = res;
     if (error) { setSyncStatus('error','Fehler'); toast('Fehler: '+error.message); return; }
@@ -2073,8 +2084,16 @@ async function saveEntry() {
       }
       render();
     } else {
-      // Kein Row-Return (z. B. RLS) — Fallback: volle Liste (kann bei schwachem Netz länger dauern)
-      await loadData({ quiet: true });
+      try {
+        await withTimeout(loadData({ quiet: true }), SAVE_NETWORK_TIMEOUT_MS, '__save_timeout__');
+      } catch (e) {
+        if (e?.message === '__save_timeout__') {
+          setSyncStatus('error', 'Zeitüberschreitung');
+          toast('Keine Antwort vom Server. Verbindung prüfen oder Seite neu laden (F5).');
+          return;
+        }
+        throw e;
+      }
     }
     setSyncStatus('ok', 'Gespeichert');
     closeDrawer();

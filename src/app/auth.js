@@ -2,7 +2,7 @@
  * Login, Session, Profil, Nutzer-Menü, Admin-Liste.
  */
 import { RECENT_ACCOUNTS_KEY, SB_AUTH_TAB_META_KEY } from './storage-keys.js';
-import { esc, toast, setSyncStatus } from './lib.js';
+import { esc, toast, setSyncStatus, withTimeout } from './lib.js';
 import { appSession } from './session.js';
 
 let isSignupMode = false;
@@ -115,11 +115,11 @@ export async function doLogout(forceReload = false) {
   setSyncStatus('loading', 'Abmelden…');
   let timedOut = false;
   try {
-    const signOutPromise = appSession.sb.auth.signOut();
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('__logout_timeout__')), LOGOUT_TIMEOUT_MS);
-    });
-    const { error } = await Promise.race([signOutPromise, timeoutPromise]);
+    const { error } = await withTimeout(
+      appSession.sb.auth.signOut(),
+      LOGOUT_TIMEOUT_MS,
+      '__logout_timeout__'
+    );
     if (error) throw error;
   } catch (e) {
     if (e?.message === '__logout_timeout__') {

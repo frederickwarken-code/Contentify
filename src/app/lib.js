@@ -78,6 +78,19 @@ export function dlFile(name, content, type) {
   a.click();
 }
 
+/**
+ * Bricht ab, wenn eine Promise (z. B. Supabase) zu lange nicht antwortet.
+ * Hintergrund: hängende Requests sonst „Speichere…“ / „Abmelden…“ ohne Ende; Reload hilft, weil der Tab neu startet.
+ */
+export function withTimeout(promise, ms, errMsg = '__timeout__') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(errMsg)), ms);
+    }),
+  ]);
+}
+
 /** Import/Export-Popup schließen. */
 export function closeExport() {
   document.getElementById('exportPanel')?.classList.remove('open');
