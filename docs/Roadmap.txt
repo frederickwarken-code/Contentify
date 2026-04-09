@@ -1,4 +1,4 @@
-Aktueller Fokus: **Offener Bug — Multi-Tab / Tab-Wechsel / Supabase-Anfragen** (Stand letzte Aktualisierung: **2026-03-31**). **Problem besteht nach wie vor** (Nutzer-Bestätigung nach den unten genannten Fixes). Nächste Session: unten **„Jetziger Stand & nächste Schritte“** und Session-Start-Checkliste. Modularisierung (Kanban/Map …) erst wieder sinnvoll, wenn Basis stabil.
+Aktueller Fokus: **Multi-Tab / Supabase 401** — **Fix eingebaut (2026):** Auth liegt wieder in **localStorage** mit **feste**m Key `sb-<projekt>-auth-token` (statt pro Tab zufälliger Key in sessionStorage). Grund: Jeder Tab hatte ein eigenes JWT; nur ein Tab erneuerte das Token → nach Wechsel oft abgelaufenes Token und rote GETs. **Bitte testen** (zwei Tabs, Tab wechseln, speichern). Zweites Konto im selben Browser: Abmelden oder InPrivate. Modularisierung (Kanban/Map …) erst wieder sinnvoll, wenn Basis stabil.
 
 --- Debug-Handoff Multi-Tab / Sync ---
 
@@ -34,11 +34,9 @@ Aktueller Fokus: **Offener Bug — Multi-Tab / Tab-Wechsel / Supabase-Anfragen**
 - **`src/app.js`:** `try/catch` um **`loadData`** beim **Boot**, bei **SIGNED_IN**, nach **Import**; Realtime-Callback nach Kategorien-Update; bei Fehler Toast mit Hinweis **F5 / neu anmelden**.
 
 **Jetziger Stand & nächste Schritte (für die nächste Session)**
-- **Bug ist nicht gelöst** — trotz Session-Refresh-Retry und Timeouts.
-- **Als Nächstes sinnvoll:** Beim roten Request in Netzwerk **„Antwort“ / Response** öffnen — steht dort z. B. **JWT expired**, **invalid API key**, **RLS**? Das entscheidet Auth vs. Projekt vs. Regeln.
-- **Git-Bisect** oder Commit finden, ab dem es noch ging (falls je stabil).
-- Optional: **Pro-TAB-Auth** (`getAuthStorageKeyForBrowserTab` / `sessionStorage`) vs. Zwei-Tabs-Szenario bewusst prüfen (gleicher Account, zwei Tabs).
-- **Viele Konsole-Fehler (z. B. 200+):** nicht alles muss von Contentify kommen — **Erweiterungen**, **Vite HMR** — ggf. **Inkognito ohne Erweiterungen** testen.
+- **2026:** **Auth-Speicher** von **sessionStorage (pro Tab eigener Key)** auf **localStorage (ein gemeinsamer Key)** umgestellt — siehe `getSupabaseAuthStorageKey()` in `storage-keys.js`, `createClient` in `app.js`, Logout-Bereinigung in `auth.js`. Ziel: gleiche Session / gleiches JWT in allen Tabs.
+- Wenn es **trotzdem** rot wird: Response des Requests prüfen (**JWT**, **RLS**, **API-Key**). Dann **Git-Bisect** o. Ä.
+- **Viele Konsole-Fehler:** Erweiterungen / Vite HMR — ggf. **Inkognito** testen.
 
 **Was schon probiert wurde (laut Verlauf / Code) und nicht zuverlässig geholfen hat**
 - Realtime-Patch vs. voller Reload; quiet-load Generation gegen Races.
@@ -52,7 +50,7 @@ Aktueller Fokus: **Offener Bug — Multi-Tab / Tab-Wechsel / Supabase-Anfragen**
 **Nächste Debug-Ideen (nach Session-Start oben)**
 1. **Git-Bisect** oder **Branch:** letzten Commit finden, an dem Multi-Tab noch ging (falls es je stabil war).
 2. **Schritt zurück Modularisierung?** Alles wieder in eine große `app.js` zu packen **behebt den Bug nicht automatisch**, hilft aber beim **Bisect** und beim **Vergleich** mit einem älteren Stand. Sinnvoller: **ein Modul nach dem anderen** testen (z. B. `table.js`/`data-pipeline.js` temporär wieder einbinden) oder **älteren Commit** auschecken, nur um zu sehen ob Bug **vor** der Auslagerung existierte.
-3. **Nicht vergessen:** Zwei Tabs = zwei **sessionStorage**-Auth-Keys (`getAuthStorageKeyForBrowserTab`) — Absicht für Multi-Account; prüfen ob das Nebenwirkungen mit Refresh/Sync hat.
+3. ~~Zwei Tabs = zwei sessionStorage-Keys~~ — **ersetzt** durch **einen** localStorage-Key für alle Tabs (siehe oben).
 4. **Rennen / Reloads:** `_quietLoadGen`, parallele `loadData`, `render()` vs. `commitCellEdit` — gezielt loggen oder Breakpoints nur wenn Session-Start **PATCH** zeigt aber UI verwirrend ist.
 5. **Realtime / WebSocket:** nur relevant wenn **Sync** oder **Live-Updates** kaputt sind, nicht bei reinem „Klick tot“ (siehe Session-Start: unterscheidet das).
 

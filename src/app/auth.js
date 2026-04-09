@@ -1,7 +1,7 @@
 /**
  * Login, Session, Profil, Nutzer-Menü, Admin-Liste.
  */
-import { RECENT_ACCOUNTS_KEY, SB_AUTH_TAB_META_KEY } from './storage-keys.js';
+import { RECENT_ACCOUNTS_KEY, getSupabaseAuthStorageKey } from './storage-keys.js';
 import { esc, toast, setSyncStatus, withTimeout } from './lib.js';
 import { appSession } from './session.js';
 
@@ -99,14 +99,13 @@ export function openAdminPanelFromMenu() {
 
 const LOGOUT_TIMEOUT_MS = 12000;
 
-/** Wenn `signOut()` hängt (z. B. Lock/Netz), Session-Zeilen in diesem Tab entfernen. */
+/** Wenn `signOut()` hängt (z. B. Lock/Netz), Session in localStorage entfernen (gleicher Key wie createClient). */
 function clearSupabaseSessionFromTabStorage() {
   try {
-    const storageKey = sessionStorage.getItem(SB_AUTH_TAB_META_KEY);
-    if (!storageKey) return;
-    sessionStorage.removeItem(storageKey);
-    sessionStorage.removeItem(`${storageKey}-user`);
-    sessionStorage.removeItem(`${storageKey}-code-verifier`);
+    const storageKey = getSupabaseAuthStorageKey();
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(`${storageKey}-user`);
+    localStorage.removeItem(`${storageKey}-code-verifier`);
   } catch (_) { /* ignore */ }
 }
 

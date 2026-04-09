@@ -9,8 +9,18 @@ export const ROW_HEIGHT_KEY = 'contentify_row_height';
 export const MAP_PRESETS_KEY = 'contentify_map_presets';
 export const MAP_POS_KEY = 'contentify_map_pos_v2';
 export const LEGACY_MAP_POSITIONS_KEY = 'contentify_map_positions';
-/** sessionStorage: Name des Supabase-Auth-Schlüssels pro Tab (siehe `getAuthStorageKeyForBrowserTab` in app.js). */
+/** @deprecated Nur noch für Migration / alte Referenzen; Auth liegt in localStorage unter `getSupabaseAuthStorageKey()`. */
 export const SB_AUTH_TAB_META_KEY = 'contentify_sb_auth_storage_key';
+
+/** Fester Key wie Supabase-Default: `sb-<projekt>-auth-token` — alle Tabs teilen dieselbe Session (siehe app.js). */
+export function getSupabaseAuthStorageKey() {
+  const url = typeof globalThis.SUPABASE_URL !== 'undefined' ? globalThis.SUPABASE_URL : '';
+  let ref = 'project';
+  try {
+    if (url) ref = new URL(url).hostname.split('.')[0];
+  } catch (_) { /* ignore */ }
+  return `sb-${ref}-auth-token`;
+}
 /** Cross-Tab: Timestamp-Bump — andere Tabs hören auf `storage` und laden Daten neu. */
 export const CONTENT_SYNC_BUMP_KEY = 'contentify_content_sync_bump';
 

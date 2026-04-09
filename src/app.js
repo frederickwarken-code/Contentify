@@ -6,8 +6,8 @@ import {
   MAP_PRESETS_KEY,
   MAP_POS_KEY,
   LEGACY_MAP_POSITIONS_KEY,
-  SB_AUTH_TAB_META_KEY,
   CONTENT_SYNC_BUMP_KEY,
+  getSupabaseAuthStorageKey,
 } from './app/storage-keys.js';
 import {
   columns,
@@ -166,10 +166,15 @@ async function loadData(options = {}) {
   });
 }
 
-/** Hintergrund-Reload ohne Serialisierung — eine hängende Promise blockiert sonst alle folgenden. */
+/** Viele Trigger gleichzeitig (Broadcast + storage + Realtime-Debounce) → leicht bündeln, ohne sichtbares `loadData` zu blockieren. */
+let _quietReloadDebounceTimer = null;
 function enqueueQuietReloadData() {
   if (!appSession.currentUser) return;
-  void loadData({ quiet: true }).catch((e) => console.error('quiet reload', e));
+  clearTimeout(_quietReloadDebounceTimer);
+  _quietReloadDebounceTimer = setTimeout(() => {
+    _quietReloadDebounceTimer = null;
+    void loadData({ quiet: true }).catch((e) => console.error('quiet reload', e));
+  }, 280);
 }
 
 /** Tab-eigene ID für BroadcastChannel (jeder Tab hat eigenes sessionStorage). */
@@ -221,6 +226,8 @@ window.addEventListener('storage', (e) => {
  */
 function runTabReturnRecovery() {
   void (async () => {
+    /** Hängender Bulk/Prune kann den Flag stehen lassen → Speichern wirkt „blockiert“. */
+    bulkOperationRunning = false;
     /** Im Hintergrund-Tab laufen Auto-Refresh-Timer oft nicht; JWT kann ablaufen. getSession() ist nur Cache — explizit neu holen. */
     try {
       const { error } = await appSession.sb?.auth?.refreshSession?.() ?? { error: null };
@@ -251,13 +258,24 @@ function runTabReturnRecovery() {
 
 function initTabReturnRecovery() {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !appSession.currentUser) return;
+    if (!appSession.currentUser || !appSession.sb) return;
+    if (document.visibilityState === 'hidden') {
+      try {
+        appSession.sb.auth.stopAutoRefresh?.();
+      } catch (_) { /* ignore */ }
+      return;
+    }
+    try {
+      appSession.sb.auth.startAutoRefresh?.();
+    } catch (_) { /* ignore */ }
     runTabReturnRecovery();
   });
   window.addEventListener('pageshow', (e) => {
-    if (e.persisted && appSession.currentUser) {
-      runTabReturnRecovery();
-    }
+    if (!e.persisted || !appSession.currentUser || !appSession.sb) return;
+    try {
+      appSession.sb.auth.startAutoRefresh?.();
+    } catch (_) { /* ignore */ }
+    runTabReturnRecovery();
   });
 }
 
@@ -2031,37 +2049,6 @@ function attachInlineHandlers() {
   });
 }
 
-/** Pro Tab eigener Supabase-Auth-Key: BroadcastChannel heißt wie storageKey — sonst syncen alle Tabs die Session, egal ob localStorage oder sessionStorage.
- * Hinweis: „Tab duplizieren“ kopiert sessionStorage → gleicher Key wie Quelltab → Logout/Login kann den anderen Tab per Broadcast mitbeeinflussen. Zweites Konto: neuen Tab öffnen (nicht duplizieren). */
-function getAuthStorageKeyForBrowserTab() {
-  let key = sessionStorage.getItem(SB_AUTH_TAB_META_KEY);
-  if (!key) {
-    let ref = 'project';
-    try {
-      ref = new URL(SUPABASE_URL).hostname.split('.')[0];
-    } catch (_) { /* ignore */ }
-    const id = typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    key = `sb-${ref}-auth-token-${id}`;
-    sessionStorage.setItem(SB_AUTH_TAB_META_KEY, key);
-  }
-  return key;
-}
-
-/** Alte Default-Session aus localStorage entfernen (vor Multi-Tab-Umstellung); sonst kann die erste Anmeldung nach Reload unstabil wirken. */
-function removeLegacySupabaseAuthFromLocalStorage() {
-  try {
-    const ref = new URL(SUPABASE_URL).hostname.split('.')[0];
-    const legacy = `sb-${ref}-auth-token`;
-    if (localStorage.getItem(legacy) != null) {
-      localStorage.removeItem(legacy);
-      localStorage.removeItem(`${legacy}-user`);
-      localStorage.removeItem(`${legacy}-code-verifier`);
-    }
-  } catch (_) { /* ignore */ }
-}
-
 async function boot() {
   if (typeof SUPABASE_URL==='undefined'||SUPABASE_URL==='YOUR_SUPABASE_URL') {
     document.body.innerHTML='<div style="padding:40px;font-family:sans-serif;color:#c0392b">⚠️ Bitte config.js ausfüllen!</div>';
@@ -2069,13 +2056,12 @@ async function boot() {
   }
   appSession.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
-      storage: window.sessionStorage,
-      storageKey: getAuthStorageKeyForBrowserTab(),
+      storage: window.localStorage,
+      storageKey: getSupabaseAuthStorageKey(),
       persistSession: true,
       autoRefreshToken: true,
     },
   });
-  removeLegacySupabaseAuthFromLocalStorage();
   loadColumns();
 
   // One-time cleanup: remove bad map positions saved by old buggy builds

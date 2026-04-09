@@ -4,6 +4,8 @@
 import { columns } from './columns.js';
 import { ROW_HEIGHT_KEY } from './storage-keys.js';
 import { esc, toast, showConfirm, setSyncStatus, withTimeout } from './lib.js';
+import { appSession } from './session.js';
+import { normalizeMultiselectToOptions, sameMultiValue } from './field-normalize.js';
 
 /** Supabase-Update ohne Timeout kann ewig hängen (Tab-Wechsel / Hintergrund) — UI bleibt dann auf „Speichern…“. */
 const MUTATION_TIMEOUT_MS = 30000;
@@ -15,8 +17,6 @@ async function updateContentItemRow(row, id) {
     '__timeout__'
   );
 }
-import { appSession } from './session.js';
-import { normalizeMultiselectToOptions, sameMultiValue } from './field-normalize.js';
 
 let _hooks = {
   getData: () => [],
