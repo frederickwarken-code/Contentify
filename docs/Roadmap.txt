@@ -1,4 +1,4 @@
-Aktueller Fokus: **Multi-Tab / Supabase 401** — **Fix eingebaut (2026):** Auth liegt wieder in **localStorage** mit **feste**m Key `sb-<projekt>-auth-token` (statt pro Tab zufälliger Key in sessionStorage). Grund: Jeder Tab hatte ein eigenes JWT; nur ein Tab erneuerte das Token → nach Wechsel oft abgelaufenes Token und rote GETs. **Bitte testen** (zwei Tabs, Tab wechseln, speichern). Zweites Konto im selben Browser: Abmelden oder InPrivate. Modularisierung (Kanban/Map …) erst wieder sinnvoll, wenn Basis stabil.
+Aktueller Fokus: **Modularisierung** — **Kanban** liegt in `src/app/kanban.js`. **Nächste Schritte (Reihenfolge vorgeschlagen):** (1) **Import/Export** aus `app.js` auslagern, (2) **Map** aus `app.js` auslagern. **Drawer** bewusst später (ein gemeinsamer Bearbeitungs-Dialog für alle Tabs; größerer Brocken). Multi-Tab/Auth-Fix (localStorage, fester Key) bleibt die Basis; bei neuen Bugs weiter Session-Start in der Debug-Sektion unten.
 
 --- Debug-Handoff Multi-Tab / Sync ---
 
@@ -67,13 +67,12 @@ Nächste Schritte (Stand Modularisierung, technisch):
    - ✅ **Schritt 2 erledigt:** `loadData` in `data-pipeline.js`; `app.js` übergibt `sb`, `setSyncStatus`, Daten-Setter, `render`.
   - ✅ **Schritt 3 erledigt:** Realtime-Kanäle in `data-pipeline.js` (`subscribeRealtimeChannels`); `app.js` übergibt Callbacks (Bulk, Spalten, Presence).
    - ✅ **Spalten/Kategorien:** `src/app/columns.js` (Modal, LocalStorage, Supabase `app_settings`); `columns-defaults.js` unverändert separat.
-   - ✅ **Tabelle:** `src/app/table.js` + `field-normalize.js` (Auswahlwerte); `src/app.js` bindet `setTableAppHooks` (Daten, Sortierung, Bulk-Flag, `itemToRow`, Drawer).
-   - ⏭ **Nächster Schritt:** Kanban oder Map aus `app.js` auslagern — oder Import/Export.
-   - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Drawer/Speichern).
+  - ✅ **Tabelle:** `src/app/table.js` + `field-normalize.js` (Auswahlwerte); `src/app.js` bindet `setTableAppHooks` (Daten, Sortierung, Bulk-Flag, `itemToRow`, Drawer).
+  - ✅ **Kanban:** `src/app/kanban.js`; `setKanbanHooks` (u. a. `openDrawer`, `isIdea`).
+  - ⏭ **Nächste Schritte (Modularisierung):** (1) **Import/Export** → eigenes Modul aus `app.js`, (2) **Map** (d3/Simulation; größter verbleibender Brocken in `app.js`). **Drawer** später.
+  - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Kanban/Map/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
-5. ⏭ **UI-Ansichten:** Tabelle → Kanban → Map (je nach Bedarf; Map oft der größte Brocken).
-6. ⏭ **Import/Export** optional eigenes Modul.
-7. Langfristig: `attachInlineHandlers`/`window` durch direkte Event-Listener ersetzen wo möglich.
+5. Langfristig: `attachInlineHandlers`/`window` durch direkte Event-Listener ersetzen wo möglich.
 
 Test nach Änderungen: lokal `npm run dev` unter `/Contentify/` + Deploy prüfen.
 
