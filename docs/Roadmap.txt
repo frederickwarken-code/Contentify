@@ -130,6 +130,7 @@ Laufend ab ersten Kunden
 •	Microsoft und Google API-Änderungen im Auge behalten
 
 Version 2 – Feature-Ideen
+Import/Export ausbauen Aktuell: CSV (`;`) und JSON; Kernfelder + Duplikat-Check auf Titel; keine `.xlsx` direkt, dynamische Kategorie-Spalten (`custom_fields`) werden aus CSV nicht importiert. Später: Excel nativ (`.xlsx`), flexiblere Spaltenzuordnung (Header → App-Spalten/Kategorien), optional Import bestehender Kategoriewerte — je nach Bedarf vor oder nach Auslagerung des Import-Codes in ein eigenes Modul.
 Auto-Eintrag aus Link oder Datei Nutzer gibt eine URL oder lädt eine Datei hoch → Claude analysiert den Inhalt automatisch → Eintrag wird mit Titel, Format, Keywords, Zusammenfassung und passenden Kategorien automatisch befüllt. Spart manuellen Aufwand beim Anlegen neuer Einträge erheblich.
 Automatische Verlinkungsvorschläge in der Link-Map Claude analysiert alle vorhandenen Einträge und schlägt Verlinkungen vor die noch nicht existieren – basierend auf thematischer Ähnlichkeit und SEO-Logik. Zeigt dem Nutzer Lücken im Content-Netz auf.
 Pillar Page & Cluster Struktur Einträge können als "Pillar" markiert werden, Cluster Pages werden als Unterpunkte zugeordnet. Claude prüft ob das Cluster thematisch vollständig ist oder ob wichtige Unterthemen fehlen.
