@@ -24,17 +24,6 @@
   </div>
 </div>
 
-<!-- Export panel -->
-<div class="export-panel" id="exportPanel">
-  <h4>Exportieren</h4>
-  <button onclick="exportCSV()">📄 CSV exportieren</button>
-  <button onclick="exportJSON()">{ } JSON exportieren</button>
-  <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
-  <h4>Importieren</h4>
-  <button onclick="document.getElementById('importFileInput').click()">📥 CSV/JSON importieren</button>
-  <input type="file" id="importFileInput" accept=".csv,.json" style="display:none" onchange="handleImportFile(this)">
-</div>
-
 <!-- Column Manager Modal -->
 <div class="modal-overlay" id="colModal">
   <div class="modal">
@@ -89,7 +78,18 @@
     <div class="header-right" id="headerRight">
       <div id="onlineUsersBar" style="display:flex;align-items:center;padding-left:6px;margin-right:4px" title="Gerade online"></div>
       <button class="btn-ghost" style="font-size:12px;padding:5px 10px" onclick="openColModal()" title="Kategorien verwalten">⚙️ Kategorien</button>
-      <button class="btn-ghost" style="font-size:12px;padding:5px 10px" id="exportBtn">↓ Import/Export</button>
+      <div class="export-dropdown-wrap">
+        <button class="btn-ghost" style="font-size:12px;padding:5px 10px" id="exportBtn" type="button">↓ Import/Export</button>
+        <div class="export-panel" id="exportPanel">
+          <h4>Exportieren</h4>
+          <button type="button" onclick="exportCSV()">📄 CSV exportieren</button>
+          <button type="button" onclick="exportJSON()">{ } JSON exportieren</button>
+          <hr style="border:none;border-top:1px solid var(--border);margin:6px 0">
+          <h4>Importieren</h4>
+          <button type="button" onclick="document.getElementById('importFileInput').click()">📥 CSV/JSON importieren</button>
+          <input type="file" id="importFileInput" accept=".csv,.json" style="display:none" onchange="handleImportFile(this)">
+        </div>
+      </div>
       <button class="btn-primary" style="font-size:12px;padding:5px 11px" id="newBtn" onclick="openNewDrawer()">+ Neuer Inhalt</button>
       <div class="user-chip" id="userChip" onclick="toggleUserMenu(event)" style="cursor:pointer" title="Profil / Konto"></div>
       <div id="userMenu" style="display:none;position:absolute;right:12px;top:52px;z-index:80;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-lg);min-width:260px;overflow:hidden">
