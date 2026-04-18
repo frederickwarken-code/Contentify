@@ -44,6 +44,13 @@ export function setTableAppHooks(hooks) {
  * falls Bubbling oder ein älteres Element-Verhalten den früheren Listener auf #contentArea stört.
  */
 let _cellViewDelegationBound = false;
+/** Schließt Multiselect-Zellenbearbeitung bei Klick außerhalb (Dropdown klappt zu). */
+function onDocumentMousedownCloseMultiselectEdit(e) {
+  const editingTd = document.querySelector('#tBody td.editing.cell-ms-wrap');
+  if (!editingTd) return;
+  if (editingTd.contains(e.target)) return;
+  cancelCellEdit(editingTd);
+}
 function onContentAreaCellViewClick(e) {
   const area = document.getElementById('contentArea');
   if (!area || !area.contains(e.target)) return;
@@ -71,6 +78,7 @@ function attachCellViewDelegationOnce() {
   if (_cellViewDelegationBound) return;
   _cellViewDelegationBound = true;
   document.addEventListener('click', onContentAreaCellViewClick, true);
+  document.addEventListener('mousedown', onDocumentMousedownCloseMultiselectEdit, true);
 }
 
 function notifyPeersIfAny() {
@@ -205,9 +213,14 @@ export function renderTable(items, area) {
       });
       if (col.type !== 'multiselect') {
         if (editorEl?.tagName === 'SELECT') {
-          // Nur change + expliziter Wert: blur/re-read nach Layout ist bei <select> unzuverlässig; ohne change: Escape zum Abbrechen.
           editorEl.addEventListener('change', (e) => {
             void commitCellEdit(td, item, col, e.target.value);
+          });
+          editorEl.addEventListener('blur', () => {
+            setTimeout(() => {
+              if (!td.isConnected || !td.classList.contains('editing')) return;
+              void commitCellEdit(td, item, col);
+            }, 0);
           });
         } else {
           editorEl?.addEventListener('blur', () => commitCellEdit(td, item, col));
@@ -590,8 +603,14 @@ function startCellEdit(td, item, col) {
     _hooks.openDrawer(item.id);
     return;
   }
+  document.querySelectorAll('#tBody td.editing').forEach((cell) => {
+    if (cell !== td) cancelCellEdit(cell);
+  });
   if (col.type === 'multiselect') td.classList.add('cell-ms-wrap');
   td.classList.add('editing');
+  if (col.type === 'multiselect') {
+    td.querySelector('.cell-ms-dropdown')?.style.removeProperty('display');
+  }
   const input = td.querySelector('.cell-edit input, .cell-edit select, .cell-edit textarea');
   if (input) {
     input.focus();
