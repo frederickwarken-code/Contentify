@@ -28,7 +28,7 @@ import {
   onNewColTypeChange,
   createColumn,
 } from './app/columns.js';
-import { esc, toast, showConfirm, dlFile, closeExport, setSyncStatus, withTimeout } from './app/lib.js';
+import { esc, toast, showConfirm, closeExport, setSyncStatus, withTimeout } from './app/lib.js';
 import { appSession } from './app/session.js';
 import {
   toggleSignup,
@@ -71,6 +71,12 @@ import {
   renderKanban,
   setKanbanHooks,
 } from './app/kanban.js';
+import {
+  exportCSV,
+  exportJSON,
+  handleImportFile,
+  setImportExportHooks,
+} from './app/import-export.js';
 
 // ═══════════════════════════════════════════
 // INIT
@@ -1278,7 +1284,8 @@ function openNewDrawer() {
 
 function renderDrawerBody(item) {
   const body = document.getElementById('drawerBody');
-  const ideaFlag = item?.isIdeaFlag || false;
+  /** Gleiche Logik wie in Tabelle/Kanban/Map: explizite Flag ODER Phase (inkl. Fallback „Idee“). */
+  const ideaFlag = item ? isIdea(item) : false;
   let html = `<div style="display:flex;align-items:center;justify-content:space-between;background:${ideaFlag?'rgba(240,180,41,.12)':'var(--surface2)'};border:1px solid ${ideaFlag?'#f0b429':'var(--border)'};border-radius:var(--radius);padding:10px 14px;margin-bottom:14px">
     <div>
       <div style="font-size:13px;font-weight:600;color:${ideaFlag?'#8a6000':'var(--text)'}">💡 Als Idee markieren</div>
@@ -1500,6 +1507,24 @@ function getDrawerValues() {
   return item;
 }
 
+/** Wenn der Nutzer „Als Idee“ ausschaltet, Phase-Werte entfernen, die allein die Idee-Anzeige triggern (sonst bleibt die Zeile gelb). */
+function stripIdeaPhaseIfIdeaToggledOff(vals) {
+  if (vals.isIdeaFlag) return;
+  const phaseCol = columns.find((c) => c.id === 'phase');
+  if (phaseCol?.type === 'multiselect' && Array.isArray(vals.phase)) {
+    const ideaLabels = (phaseCol.options || []).filter((o) => o.isIdea).map((o) => o.label);
+    if (ideaLabels.length) vals.phase = vals.phase.filter((l) => !ideaLabels.includes(l));
+  } else {
+    const p = vals.phase;
+    if (p === 'Idee' || p === 'Idea') {
+      vals.phase = '';
+    } else if (typeof p === 'string' && p && phaseCol?.type === 'select') {
+      const opt = (phaseCol.options || []).find((o) => o.label === p);
+      if (opt?.isIdea) vals.phase = '';
+    }
+  }
+}
+
 function itemToRow(item, options = {}) {
   const { forInsert = false } = options;
   return itemToDbRow(item, {
@@ -1519,6 +1544,7 @@ const SAVE_NETWORK_TIMEOUT_MS = 15000;
 async function saveEntry() {
   try {
     const vals = getDrawerValues();
+    stripIdeaPhaseIfIdeaToggledOff(vals);
     if (!vals.title) { toast('Bitte Titel eingeben'); return; }
     const row = itemToRow({ ...(drawerItem || {}), ...vals }, { forInsert: !drawerItem });
     setSyncStatus('loading','Speichere…');
@@ -1587,126 +1613,6 @@ async function deleteEntry() {
 
 function closeDrawer() { document.getElementById('overlay').classList.remove('open'); }
 function closeDrawerOnBg(e) { if(e.target===document.getElementById('overlay')) closeDrawer(); }
-
-// ═══════════════════════════════════════════
-// EXPORT
-// ═══════════════════════════════════════════
-function exportCSV() {
-  const visCols = columns.filter(c=>c.visible);
-  const headers = visCols.map(c=>c.name);
-  const rows = [headers.join(';')];
-  data.forEach(d=>{
-    rows.push(visCols.map(c=>{
-      const v = Array.isArray(d[c.id]) ? d[c.id].join(', ') : (d[c.id]||'');
-      return `"${String(v).replace(/"/g,'""')}"`;
-    }).join(';'));
-  });
-  dlFile('Content_Map.csv', rows.join('\n'), 'text/csv');
-  closeExport();
-}
-function exportJSON(){ dlFile('Content_Map.json',JSON.stringify(data,null,2),'application/json'); closeExport(); }
-
-// ── IMPORT ──
-async function handleImportFile(input) {
-  const file = input.files[0];
-  if(!file) return;
-  input.value = ''; // reset so same file can be re-imported
-  closeExport();
-  const text = await file.text();
-  try {
-    if(file.name.endsWith('.json')) {
-      await importJSON(text);
-    } else {
-      await importCSV(text);
-    }
-  } catch(e) {
-    toast('Import-Fehler: ' + e.message);
-  }
-}
-
-async function importJSON(text) {
-  const items = JSON.parse(text);
-  if(!Array.isArray(items)) throw new Error('JSON muss ein Array sein');
-  await importItems(items);
-}
-
-async function importCSV(text) {
-  const lines = text.split(/\r?\n/).filter(l=>l.trim());
-  if(lines.length < 2) throw new Error('CSV ist leer');
-  const headers = lines[0].split(';').map(h=>h.replace(/^"|"$/g,'').trim());
-  const items = lines.slice(1).map(line => {
-    // Handle quoted fields with semicolons
-    const fields = [];
-    let cur = '', inQ = false;
-    for(const ch of line) {
-      if(ch==='"') { inQ=!inQ; }
-      else if(ch===';' && !inQ) { fields.push(cur); cur=''; }
-      else cur+=ch;
-    }
-    fields.push(cur);
-    const obj = {};
-    headers.forEach((h,i) => { obj[h] = fields[i]?.replace(/^"|"$/g,'').trim()||''; });
-    return obj;
-  });
-  await importItems(items);
-}
-
-async function importItems(items) {
-  if(!items.length) { toast('Keine Einträge zum Importieren'); return; }
-  const existingTitles = new Set(data.map(d=>(d.title||'').toLowerCase()));
-  const toInsert = [];
-  let skipped = 0;
-  const colMap = {
-    'Titel':'title','Title':'title','TITEL':'title',
-    'Thema':'topic','Status':'phase','Format':'format',
-    'Persona':'persona','Verantw.':'owner','Keyword':'mainKw',
-    'URL':'url','Notizen':'notes','Datum':'date',
-  };
-  items.forEach(item => {
-    // Map column names to internal field names
-    const mapped = {};
-    Object.entries(item).forEach(([k,v]) => {
-      const field = colMap[k] || k;
-      mapped[field] = v;
-    });
-    const title = mapped.title || mapped.Titel || mapped.Title || '';
-    if(!title) { skipped++; return; }
-    if(existingTitles.has(title.toLowerCase())) { skipped++; return; } // skip duplicates
-    toInsert.push({
-      title,
-      topic: mapped.topic||'',
-      phase: mapped.phase||'Idee',
-      format: mapped.format||'',
-      persona: mapped.persona||'',
-      owner: mapped.owner||'',
-      main_keyword: mapped.mainKw||mapped.main_keyword||'',
-      url: mapped.url||'',
-      description: mapped.notes||mapped.description||'',
-      planned_date: mapped.date||mapped.planned_date||null,
-      keywords: [],
-      internal_links: [],
-      custom_fields: {},
-      created_by: appSession.currentUser?.id,
-    });
-  });
-  if(!toInsert.length) {
-    toast(`Keine neuen Einträge (${skipped} übersprungen — doppelt oder ohne Titel)`);
-    return;
-  }
-  setSyncStatus('loading', `Importiere ${toInsert.length} Einträge…`);
-  const {error} = await appSession.sb.from('content_items').insert(toInsert);
-  if(error) { setSyncStatus('error','Fehler'); toast('Import-Fehler: '+error.message); return; }
-  try {
-    await loadData({ quiet: true });
-  } catch (e) {
-    setSyncStatus('error', e?.message?.slice(0, 80) || 'Fehler');
-    toast('Import: Liste konnte nicht neu geladen werden — ' + (e?.message || e));
-    return;
-  }
-  setSyncStatus('ok', `${data.length} Einträge`);
-  toast(`✅ ${toInsert.length} Einträge importiert${skipped?', '+skipped+' übersprungen':''}`);
-  notifyOtherTabsContentChanged();
-}
 
 // ═══════════════════════════════════════════
 // UTILS
@@ -1973,6 +1879,13 @@ setTableAppHooks({
   notifyPeers: notifyOtherTabsContentChanged,
 });
 setKanbanHooks({ isIdea, openDrawer });
+setImportExportHooks({
+  getData: () => data,
+  itemToRow,
+  loadData,
+  isIdea,
+  notifyPeers: notifyOtherTabsContentChanged,
+});
 setColumnsAppHooks({ render, runPruneStaleCategoryValues });
 attachInlineHandlers();
 boot();

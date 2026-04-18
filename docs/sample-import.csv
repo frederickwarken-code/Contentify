@@ -1,3 +1,4 @@
 Titel;Thema;Status;Format;Persona;Verantw.;Keyword;URL;Notizen;Datum
-"Import-Test Alpha";Content-Strategie;Idee;Blog-Artikel;B2B-Käufer;Marketing;Content-Pillar;https://example.com/alpha;"Kurze Notiz zum ersten Testeintrag — für den Import.";2026-04-15
-"Import-Test Beta";Social Media;Idee;Reel;Privatkunden;Team;Instagram;"https://example.org/beta?x=1";Zweiter Test ohne Sonderzeichen im Datum;2026-05-01
+Import-Test Alpha;Content-Strategie;;Blog-Artikel;B2B-Käufer;Marketing;Content-Pillar;https://example.com/alpha;Kurze Notiz zum ersten Testeintrag — für den Import.;15.04.2026
+Import-Test Beta;Social Media;;Reel , Video;Privatkunden;Team;Instagram,Facebook;https://example.org/beta?x=1;Zweiter Test ohne Sonderzeichen im Datum;01.05.2026
+Test 10;bli;bla;blubb;;;;;;

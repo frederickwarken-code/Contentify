@@ -8,7 +8,10 @@ export function canonicalOptionLabel(col, raw) {
   return opts.find((o) => o.label.toLowerCase() === String(raw ?? '').trim().toLowerCase())?.label ?? null;
 }
 
-/** Nur noch gültige Mehrfach-Auswahl-Labels (laut aktueller Kategorie-Definition). */
+/**
+ * Mehrfach-Auswahl: gültige Optionen (exakte Schreibweise) + **Werte, die noch nicht in der Liste stehen**
+ * (z. B. nach Import oder umbenannten Kategorien), damit `runPruneStaleCategoryValues` sie nicht leer speichert.
+ */
 export function normalizeMultiselectToOptions(col, raw) {
   const arr = Array.isArray(raw) ? raw : (raw ? [raw] : []);
   const out = [];
@@ -18,13 +21,22 @@ export function normalizeMultiselectToOptions(col, raw) {
     if (c && !seen.has(c)) {
       seen.add(c);
       out.push(c);
+      continue;
+    }
+    const orphan = String(v ?? '').trim();
+    if (!c && orphan && !seen.has(orphan)) {
+      seen.add(orphan);
+      out.push(orphan);
     }
   }
   return out;
 }
 
+/** Einzelauswahl: passende Option oder Rohwert behalten (Import / alte Bezeichnung). */
 export function normalizeSelectToOptions(col, raw) {
-  return canonicalOptionLabel(col, raw) ?? '';
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  return canonicalOptionLabel(col, raw) ?? s;
 }
 
 export function sameMultiValue(a, b) {

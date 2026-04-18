@@ -72,6 +72,42 @@ function saveColumns() {
   saveColumnsToSupabase();
 }
 
+/**
+ * Fehlende Auswahl-Optionen anlegen (z. B. nach Import), damit Werte als normale Kategorie-Tags erscheinen.
+ * @param {Record<string, string[]>} fieldLabels — Spalten-id → Liste von Bezeichnungen (z. B. format: ['Reel'])
+ */
+export function ensureImportOptionsForFields(fieldLabels) {
+  let anyChanged = false;
+  for (const [colId, labels] of Object.entries(fieldLabels)) {
+    if (!labels?.length) continue;
+    const col = columns.find((c) => c.id === colId);
+    if (!col || (col.type !== 'select' && col.type !== 'multiselect')) continue;
+    const opts = col.options ? [...col.options] : [];
+    const existing = new Set(opts.map((o) => o.label.toLowerCase()));
+    let colChanged = false;
+    for (const raw of labels) {
+      const t = String(raw ?? '').trim();
+      if (!t) continue;
+      const lk = t.toLowerCase();
+      if (existing.has(lk)) continue;
+      existing.add(lk);
+      const color = _autoColors[opts.length % _autoColors.length];
+      opts.push({ label: t, color });
+      colChanged = true;
+    }
+    if (colChanged) {
+      col.options = opts;
+      anyChanged = true;
+    }
+  }
+  if (anyChanged) {
+    saveColumns();
+    renderAfterColumnsChange();
+    toast('Neue Kategorie-Optionen aus dem Import übernommen.');
+    void _runPrune();
+  }
+}
+
 /** Realtime: Spalten von anderem Client übernehmen. */
 export function applyRemoteColumns(remote) {
   if (!Array.isArray(remote)) return;

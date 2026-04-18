@@ -1,4 +1,4 @@
-Aktueller Fokus: **Modularisierung** — **Kanban** liegt in `src/app/kanban.js`. **Nächste Schritte (Reihenfolge vorgeschlagen):** (1) **Import/Export** aus `app.js` auslagern, (2) **Map** aus `app.js` auslagern. **Drawer** bewusst später (ein gemeinsamer Bearbeitungs-Dialog für alle Tabs; größerer Brocken). Multi-Tab/Auth-Fix (localStorage, fester Key) bleibt die Basis; bei neuen Bugs weiter Session-Start in der Debug-Sektion unten.
+Aktueller Fokus: **Modularisierung** — **Kanban** `kanban.js`, **Import/Export** `import-export.js` (✅ ausgelagert, getestet). **Nächster Schritt:** **Map** aus `app.js` auslagern. **Drawer** bewusst später. Multi-Tab/Auth-Fix bleibt die Basis; bei neuen Bugs Debug-Sektion unten.
 
 --- Debug-Handoff Multi-Tab / Sync ---
 
@@ -69,7 +69,8 @@ Nächste Schritte (Stand Modularisierung, technisch):
    - ✅ **Spalten/Kategorien:** `src/app/columns.js` (Modal, LocalStorage, Supabase `app_settings`); `columns-defaults.js` unverändert separat.
   - ✅ **Tabelle:** `src/app/table.js` + `field-normalize.js` (Auswahlwerte); `src/app.js` bindet `setTableAppHooks` (Daten, Sortierung, Bulk-Flag, `itemToRow`, Drawer).
   - ✅ **Kanban:** `src/app/kanban.js`; `setKanbanHooks` (u. a. `openDrawer`, `isIdea`).
-  - ⏭ **Nächste Schritte (Modularisierung):** (1) **Import/Export** → eigenes Modul aus `app.js`, (2) **Map** (d3/Simulation; größter verbleibender Brocken in `app.js`). **Drawer** später.
+  - ✅ **Import/Export:** `src/app/import-export.js`; `setImportExportHooks` (Daten, `itemToRow`, `loadData`, `isIdea`, Tab-Sync). Datum-Import: deutsch `TT.MM.JJJJ` → ISO; neue Kategorie-Optionen aus Import möglich.
+  - ⏭ **Nächster Modularisierungs-Schritt:** **Map** (d3/Simulation) aus `app.js`. **Drawer** später.
   - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Kanban/Map/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
 5. Langfristig: `attachInlineHandlers`/`window` durch direkte Event-Listener ersetzen wo möglich.
@@ -130,7 +131,7 @@ Laufend ab ersten Kunden
 •	Microsoft und Google API-Änderungen im Auge behalten
 
 Version 2 – Feature-Ideen
-Import/Export ausbauen Aktuell: CSV (`;`) und JSON; Kernfelder + Duplikat-Check auf Titel; keine `.xlsx` direkt, dynamische Kategorie-Spalten (`custom_fields`) werden aus CSV nicht importiert. Später: Excel nativ (`.xlsx`), flexiblere Spaltenzuordnung (Header → App-Spalten/Kategorien), optional Import bestehender Kategoriewerte — je nach Bedarf vor oder nach Auslagerung des Import-Codes in ein eigenes Modul.
+Import/Export ausbauen Code liegt in `import-export.js`. Später optional: `.xlsx` nativ, flexiblere Header-Zuordnung, Import in weitere/dynamische Spalten (`custom_fields`).
 Auto-Eintrag aus Link oder Datei Nutzer gibt eine URL oder lädt eine Datei hoch → Claude analysiert den Inhalt automatisch → Eintrag wird mit Titel, Format, Keywords, Zusammenfassung und passenden Kategorien automatisch befüllt. Spart manuellen Aufwand beim Anlegen neuer Einträge erheblich.
 Automatische Verlinkungsvorschläge in der Link-Map Claude analysiert alle vorhandenen Einträge und schlägt Verlinkungen vor die noch nicht existieren – basierend auf thematischer Ähnlichkeit und SEO-Logik. Zeigt dem Nutzer Lücken im Content-Netz auf.
 Pillar Page & Cluster Struktur Einträge können als "Pillar" markiert werden, Cluster Pages werden als Unterpunkte zugeordnet. Claude prüft ob das Cluster thematisch vollständig ist oder ob wichtige Unterthemen fehlen.

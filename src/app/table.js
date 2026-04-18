@@ -513,17 +513,21 @@ function renderCellValue(item, col) {
     return cnt ? `<span style="color:var(--accent);font-weight:600">${cnt}</span>` : `<span style="color:var(--text-faint)">–</span>`;
   }
   if (col.type === 'select') {
-    const o = (col.options || []).find((x) => x.label.toLowerCase() === String(val ?? '').trim().toLowerCase());
-    if (!o) return '<span style="color:var(--text-faint)">–</span>';
-    return `<span class="cell-tag" style="background:${o.color}22;color:${o.color}">${esc(o.label)}</span>`;
+    const s = String(val ?? '').trim();
+    if (!s) return '<span style="color:var(--text-faint)">–</span>';
+    const o = (col.options || []).find((x) => x.label.toLowerCase() === s.toLowerCase());
+    if (o) return `<span class="cell-tag" style="background:${o.color}22;color:${o.color}">${esc(o.label)}</span>`;
+    return `<span class="cell-tag cell-tag-orphan" style="background:var(--surface2);color:var(--text-muted);border:1px dashed var(--border-mid)" title="Noch keine Kategorie-Option — Wert aus Import oder alter Bezeichnung">${esc(s)}</span>`;
   }
   if (col.type === 'multiselect') {
     const raw = Array.isArray(val) ? val : val ? [val] : [];
     const tags = raw
       .map((v) => {
-        const o = (col.options || []).find((x) => x.label.toLowerCase() === String(v).trim().toLowerCase());
-        if (!o) return '';
-        return `<span class="cell-tag" style="background:${o.color}22;color:${o.color}">${esc(o.label)}</span>`;
+        const t = String(v).trim();
+        if (!t) return '';
+        const o = (col.options || []).find((x) => x.label.toLowerCase() === t.toLowerCase());
+        if (o) return `<span class="cell-tag" style="background:${o.color}22;color:${o.color}">${esc(o.label)}</span>`;
+        return `<span class="cell-tag cell-tag-orphan" style="background:var(--surface2);color:var(--text-muted);border:1px dashed var(--border-mid)" title="Noch keine Kategorie-Option">${esc(t)}</span>`;
       })
       .filter(Boolean);
     return tags.join(' ') || '<span style="color:var(--text-faint)">–</span>';
