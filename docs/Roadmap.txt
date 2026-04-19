@@ -1,4 +1,4 @@
-Aktueller Fokus: **Modularisierung** — **Kanban** `kanban.js`, **Import/Export** `import-export.js` (✅ ausgelagert, getestet). **Nächster Schritt:** **Map** aus `app.js` auslagern. **Drawer** bewusst später. Multi-Tab/Auth-Fix bleibt die Basis; bei neuen Bugs Debug-Sektion unten.
+Aktueller Fokus: **Modularisierung** — **Kanban** `kanban.js`, **Import/Export** `import-export.js`, **Map** `map.js` (✅ ausgelagert). **Nächster Schritt:** **Drawer** aus `app.js` auslagern (bewusst nach Map). Multi-Tab/Auth-Fix bleibt die Basis; bei neuen Bugs Debug-Sektion unten.
 
 --- Debug-Handoff Multi-Tab / Sync ---
 
