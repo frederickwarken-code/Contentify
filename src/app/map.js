@@ -39,6 +39,18 @@ let mapPhysicsEnabled = true;
 let _sim = null;
 let selectedNodeId = null;
 let mapZoom = null;
+/** Pan/Zoom über volle `renderMap()`-Neuaufbauten hinweg (Preset, Einfärben-Wechsel); wird auch bei jedem Zoom-Event aktualisiert. */
+let mapZoomTransform = null;
+
+function captureMapZoomFromSvg(svgEl) {
+  if (!svgEl || typeof d3 === 'undefined') return;
+  try {
+    const t = d3.zoomTransform(svgEl);
+    if (t && Number.isFinite(t.k) && Number.isFinite(t.x) && Number.isFinite(t.y)) mapZoomTransform = t;
+  } catch {
+    /* ignore */
+  }
+}
 
 // ─── Position store ───────────────────────────────────────────────────────────
 // nodePos: { [id]: {x, y} } — the ONLY source of truth for node positions
@@ -228,6 +240,7 @@ function getNodeLabel(d) { return d[_hooks.getColorMode()]||'–'; }
 // ─── renderMap ────────────────────────────────────────────────────────────────
 export function renderMap() {
   const area = document.getElementById('contentArea');
+  captureMapZoomFromSvg(document.getElementById('mapSvg'));
   const selectCols = columns.filter(c=>c.type==='select');
   let colorMode = _hooks.getColorMode();
   if(!colorMode||!selectCols.find(c=>c.id===colorMode)) {
@@ -338,9 +351,10 @@ function _buildGraphNow() {
   const isIdea = _hooks.isIdea;
 
   const svg = d3.select('#mapSvg').attr('width',W).attr('height',H);
-  // Save current zoom transform before rebuild
+  // Save current zoom transform before rebuild (nur wenn SVG schon Inhalt hat — sonst z. B. nach renderMap schon leer)
+  const svgNode = document.querySelector('#mapSvg');
   const _existingG = document.querySelector('#mapSvg g');
-  const _savedTransform = _existingG ? d3.zoomTransform(document.querySelector('#mapSvg')) : null;
+  const _savedTransform = _existingG && svgNode ? d3.zoomTransform(svgNode) : null;
   svg.selectAll('*').remove();
 
   // Arrow markers
@@ -641,11 +655,25 @@ function _buildGraphNow() {
   tick();
 
   // ── Zoom ──
-  mapZoom = d3.zoom().scaleExtent([0.08,6]).on('zoom',e=>g.attr('transform',e.transform));
+  mapZoom = d3.zoom().scaleExtent([0.08,6]).on('zoom', (e) => {
+    mapZoomTransform = e.transform;
+    g.attr('transform', e.transform);
+  });
   svg.call(mapZoom);
-  // Restore previous zoom/pan if map was rebuilt due to filter change
-  if(_savedTransform && (_savedTransform.k !== 1 || _savedTransform.x !== 0 || _savedTransform.y !== 0)) {
-    svg.call(mapZoom.transform, _savedTransform);
+  const tFromSameSvg =
+    _savedTransform && (_savedTransform.k !== 1 || _savedTransform.x !== 0 || _savedTransform.y !== 0)
+      ? _savedTransform
+      : null;
+  const tFromFullRebuild =
+    !tFromSameSvg &&
+    mapZoomTransform &&
+    (mapZoomTransform.k !== 1 || mapZoomTransform.x !== 0 || mapZoomTransform.y !== 0)
+      ? mapZoomTransform
+      : null;
+  const tRestore = tFromSameSvg || tFromFullRebuild;
+  if (tRestore) {
+    svg.call(mapZoom.transform, tRestore);
+    mapZoomTransform = d3.zoomTransform(svg.node());
   }
   svg.on('dblclick.zoom',null);
   svg.on('click',()=>{ selectedNodeId=null; applyHighlight(null,linkSel,ideaLinkSel,nodeG,adj); hideTT(); });
