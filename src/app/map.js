@@ -430,6 +430,43 @@ function _buildGraphNow() {
   nodes.forEach(n=>deg[n.id]=0);
   allEdges.forEach(e=>{deg[e.source]=(deg[e.source]||0)+1;deg[e.target]=(deg[e.target]||0)+1;});
   const nr = d => 8 + (deg[d.id]||0)*2.2;
+  /** Sichtbarer Außenradius für Kanten-Enden (Einfärbung + weißer Rand + Phasen-Ring bzw. Ideen-Glow). */
+  const outerR = (n) => nr(n) + (isIdea(n) ? 8.5 : 5.5);
+  const nodeByRef = (ref) => {
+    if (ref && typeof ref.x === 'number' && typeof ref.y === 'number') return ref;
+    const id = ref && ref.id !== undefined ? ref.id : ref;
+    return nodes.find((x) => x.id === id);
+  };
+  function trimEdgeEndpoints(s, t) {
+    const dx = t.x - s.x;
+    const dy = t.y - s.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const ux = dx / dist;
+    const uy = dy / dist;
+    let rs = outerR(s);
+    let rt = outerR(t);
+    const minGap = 10;
+    if (dist < rs + rt + minGap) {
+      const scale = Math.max(0.15, (dist - minGap) / (rs + rt || 1));
+      rs *= scale;
+      rt *= scale;
+    }
+    return {
+      x1: s.x + ux * rs,
+      y1: s.y + uy * rs,
+      x2: t.x - ux * rt,
+      y2: t.y - uy * rt,
+    };
+  }
+  function linkGeom(d) {
+    const s = nodeByRef(d.source);
+    const t = nodeByRef(d.target);
+    if (!s || !t) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+    return trimEdgeEndpoints(s, t);
+  }
+
+  /** Kanten-Selektionen (über den Knoten gemalt). */
+  const linkLayers = {};
 
   // ── Adjacency (for highlight + physics) ──
   const adj = {};
@@ -471,24 +508,6 @@ function _buildGraphNow() {
   // Stop early if all nodes are pinned (no need to simulate)
   if(nodes.every(n=>n.fx!=null)) { _sim.stop(); }
 
-  // ── Render edges ──
-  const potLinkSel = g.append('g').selectAll('line').data(potEdges).join('line')
-    .attr('stroke','#f0b429').attr('stroke-opacity',0.5).attr('stroke-width',1.5)
-    .attr('stroke-dasharray','5,4').attr('marker-end','url(#arr-pot)');
-
-  const ideaLinkSel = g.append('g').selectAll('line').data(ideaEdges).join('line')
-    .attr('stroke','#f0b429').attr('stroke-opacity',0.55).attr('stroke-width',1.5)
-    .attr('stroke-dasharray','5,4').attr('marker-end','url(#arr-idea)');
-
-  const linkSel = g.append('g').selectAll('line').data(edges).join('line')
-    .attr('stroke','#bbb').attr('stroke-opacity',0.4).attr('stroke-width',1.3)
-    .attr('marker-end','url(#arr)');
-
-  // Drag line for link mode
-  const dragLine = g.append('line')
-    .attr('stroke','var(--teal-light)').attr('stroke-width',2).attr('stroke-dasharray','5,4')
-    .attr('opacity',0).attr('marker-end','url(#arr)');
-
   // ── Render nodes ──
   const pcol = columns.find(c=>c.id==='phase');
   const nodeG = g.append('g').selectAll('g').data(nodes).join('g')
@@ -496,12 +515,12 @@ function _buildGraphNow() {
     .on('mousedown', function(){ d3.select(this).raise(); })
     .on('click',(e,d)=>{
       e.stopPropagation();
-      if(selectedNodeId===d.id){ selectedNodeId=null; applyHighlight(null,linkSel,ideaLinkSel,nodeG,adj); }
-      else { selectedNodeId=d.id; applyHighlight(d.id,linkSel,ideaLinkSel,nodeG,adj); }
+      if(selectedNodeId===d.id){ selectedNodeId=null; applyHighlight(null,linkLayers,nodeG,adj); }
+      else { selectedNodeId=d.id; applyHighlight(d.id,linkLayers,nodeG,adj); }
     })
     .on('contextmenu',(e,d)=>{
       e.preventDefault(); e.stopPropagation();
-      showStaticTT(e,d,deg,linkSel,nodeG,adj);
+      showStaticTT(e,d,deg,nodeG,adj);
     })
     .on('dblclick',(e)=>{ e.stopPropagation(); e.preventDefault(); })
     .call(d3.drag()
@@ -626,25 +645,42 @@ function _buildGraphNow() {
     .attr('font-size',9.5).attr('fill','var(--text-muted)').attr('pointer-events','none')
     .attr('class','node-label');
 
+  // ── Kanten über den Knoten (z-index / Malreihenfolge) ──
+  const edgeParent = g.append('g').attr('class', 'map-edges-overlay');
+  linkLayers.potLinkSel = edgeParent.append('g').selectAll('line.pot-link').data(potEdges).join('line').attr('class', 'pot-link')
+    .attr('stroke', '#f0b429').attr('stroke-opacity', 0.5).attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,4').attr('stroke-linecap', 'round').attr('marker-end', 'url(#arr-pot)').style('pointer-events', 'none');
+
+  linkLayers.ideaLinkSel = edgeParent.append('g').selectAll('line.idea-link').data(ideaEdges).join('line').attr('class', 'idea-link')
+    .attr('stroke', '#f0b429').attr('stroke-opacity', 0.55).attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,4').attr('stroke-linecap', 'round').attr('marker-end', 'url(#arr-idea)').style('pointer-events', 'none');
+
+  linkLayers.linkSel = edgeParent.append('g').selectAll('line.norm-link').data(edges).join('line').attr('class', 'norm-link')
+    .attr('stroke', '#bbb').attr('stroke-opacity', 0.4).attr('stroke-width', 1.3)
+    .attr('stroke-linecap', 'round').attr('marker-end', 'url(#arr)').style('pointer-events', 'none');
+
+  // Drag line for link mode (über allem)
+  const dragLine = g.append('line')
+    .attr('stroke','var(--teal-light)').attr('stroke-width',2).attr('stroke-dasharray','5,4')
+    .attr('opacity',0).attr('marker-end','url(#arr)');
+
   // ── Tick function ──
   function tick(){
-    linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
-      .attr('x2',d=>{
-        const dx=d.target.x-d.source.x,dy=d.target.y-d.source.y,dist=Math.sqrt(dx*dx+dy*dy)||1;
-        const r=nr(d.target)+3; // stop just outside target circle
-        return d.target.x-dx/dist*r;
-      })
-      .attr('y2',d=>{
-        const dx=d.target.x-d.source.x,dy=d.target.y-d.source.y,dist=Math.sqrt(dx*dx+dy*dy)||1;
-        const r=nr(d.target)+3;
-        return d.target.y-dy/dist*r;
-      });
-    ideaLinkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
-    potLinkSel.attr('x1',d=>{const n=nodes.find(x=>x.id===(d.source.id||d.source));return n?.x||0;})
-              .attr('y1',d=>{const n=nodes.find(x=>x.id===(d.source.id||d.source));return n?.y||0;})
-              .attr('x2',d=>{const n=nodes.find(x=>x.id===(d.target.id||d.target));return n?.x||0;})
-              .attr('y2',d=>{const n=nodes.find(x=>x.id===(d.target.id||d.target));return n?.y||0;});
+    const setLine = (sel, list) => {
+      for (const d of list) d._g = linkGeom(d);
+      sel
+        .attr('x1', (d) => d._g.x1)
+        .attr('y1', (d) => d._g.y1)
+        .attr('x2', (d) => d._g.x2)
+        .attr('y2', (d) => d._g.y2);
+    };
+    setLine(linkLayers.linkSel, edges);
+    setLine(linkLayers.ideaLinkSel, ideaEdges);
+    setLine(linkLayers.potLinkSel, potEdges);
     nodeG.attr('transform',d=>`translate(${d.x},${d.y})`);
+    // Knoten-.raise() würde sonst über die Kanten malen
+    edgeParent.raise();
+    dragLine.raise();
     // Save positions of unpinned nodes as simulation settles
     if(W>100&&H>100) nodes.forEach(n=>{ if(n.x>50&&n.y>50&&n.x<W*2&&n.y<H*2&&!isNaN(n.x)&&!isNaN(n.y)) { if(!nodePos[n.id]||n.fx==null) nodePos[n.id]={x:n.x,y:n.y}; } });
   }
@@ -676,22 +712,24 @@ function _buildGraphNow() {
     mapZoomTransform = d3.zoomTransform(svg.node());
   }
   svg.on('dblclick.zoom',null);
-  svg.on('click',()=>{ selectedNodeId=null; applyHighlight(null,linkSel,ideaLinkSel,nodeG,adj); hideTT(); });
+  svg.on('click',()=>{ selectedNodeId=null; applyHighlight(null,linkLayers,nodeG,adj); hideTT(); });
 
   // Re-apply selection if one was active
-  if(selectedNodeId) setTimeout(()=>applyHighlight(selectedNodeId,linkSel,ideaLinkSel,nodeG,adj),100);
+  if(selectedNodeId) setTimeout(()=>applyHighlight(selectedNodeId,linkLayers,nodeG,adj),100);
 
   buildLegend();
 }
 
 // ─── Highlight ────────────────────────────────────────────────────────────────
-function applyHighlight(nodeId, linkSel, ideaLinkSel, nodeG, adj) {
-  if(!nodeId){
+function applyHighlight(nodeId, L, nodeG, adj) {
+  const { linkSel, ideaLinkSel, potLinkSel } = L;
+  if (!nodeId) {
     nodeG.selectAll('.node-circle').attr('fill-opacity',d=>_hooks.getHiddenCats().has(getNodeLabel(d))?0.15:0.88);
     nodeG.selectAll('.node-ring').attr('stroke-opacity',0.38);
     nodeG.selectAll('.node-label').attr('fill','var(--text-muted)').attr('font-weight','normal');
-    linkSel.attr('stroke','#bbb').attr('stroke-opacity',0.4).attr('stroke-width',1.3).attr('marker-end','url(#arr)');
-    ideaLinkSel.attr('stroke-opacity',0.55);
+    linkSel.attr('stroke', '#bbb').attr('stroke-opacity', 0.4).attr('stroke-width', 1.3).attr('marker-end', 'url(#arr)');
+    ideaLinkSel.attr('stroke', '#f0b429').attr('stroke-opacity', 0.55).attr('stroke-width', 1.5).attr('marker-end', 'url(#arr-idea)');
+    potLinkSel.attr('stroke', '#f0b429').attr('stroke-opacity', 0.5).attr('stroke-width', 1.5).attr('marker-end', 'url(#arr-pot)');
     return;
   }
   const nb = adj[nodeId]||new Set();
@@ -700,22 +738,41 @@ function applyHighlight(nodeId, linkSel, ideaLinkSel, nodeG, adj) {
   nodeG.selectAll('.node-label')
     .attr('fill',d=>(d.id===nodeId||nb.has(d.id))?'var(--text)':'var(--text-faint)')
     .attr('font-weight',d=>d.id===nodeId?'600':'normal');
-  // Outgoing links (from selected node) = teal/accent, Incoming links (to selected node) = blue
-  linkSel.attr('stroke',d=>{
-      const s=d.source.id||d.source,t=d.target.id||d.target;
-      if(s===nodeId) return'var(--accent-mid)'; // outgoing → teal
-      if(t===nodeId) return'var(--blue)';        // incoming → blue
-      return'#bbb';
+  // Ausgehend vom gewählten Knoten = Teal, eingehend am gewählten Knoten = Blau
+  linkSel.attr('stroke', (d) => {
+    const s = d.source.id || d.source;
+    const t = d.target.id || d.target;
+    if (s === nodeId) return 'var(--accent-mid)';
+    if (t === nodeId) return 'var(--blue)';
+    return '#bbb';
+  })
+    .attr('stroke-opacity', (d) => {
+      const s = d.source.id || d.source;
+      const t = d.target.id || d.target;
+      return s === nodeId || t === nodeId ? 0.9 : 0.06;
     })
-    .attr('stroke-opacity',d=>{const s=d.source.id||d.source,t=d.target.id||d.target;return(s===nodeId||t===nodeId)?0.9:0.06;})
-    .attr('stroke-width',d=>{const s=d.source.id||d.source,t=d.target.id||d.target;return(s===nodeId||t===nodeId)?2.5:1;})
-    .attr('marker-end',d=>{
-      const s=d.source.id||d.source,t=d.target.id||d.target;
-      if(s===nodeId) return'url(#arr-accent)'; // outgoing → teal arrow
-      if(t===nodeId) return'url(#arr-blue)';   // incoming → blue arrow
-      return'url(#arr)';
+    .attr('stroke-width', (d) => {
+      const s = d.source.id || d.source;
+      const t = d.target.id || d.target;
+      return s === nodeId || t === nodeId ? 2.5 : 1;
+    })
+    .attr('marker-end', (d) => {
+      const s = d.source.id || d.source;
+      const t = d.target.id || d.target;
+      if (s === nodeId) return 'url(#arr-accent)';
+      if (t === nodeId) return 'url(#arr-blue)';
+      return 'url(#arr)';
     });
-  ideaLinkSel.attr('stroke-opacity',d=>{const s=d.source.id||d.source,t=d.target.id||d.target;return(s===nodeId||t===nodeId)?0.9:0.06;});
+  ideaLinkSel.attr('stroke-opacity', (d) => {
+    const s = d.source.id || d.source;
+    const t = d.target.id || d.target;
+    return s === nodeId || t === nodeId ? 0.9 : 0.06;
+  });
+  potLinkSel.attr('stroke-opacity', (d) => {
+    const s = d.source.id || d.source;
+    const t = d.target.id || d.target;
+    return s === nodeId || t === nodeId ? 0.9 : 0.06;
+  });
 }
 
 // ─── Legend ───────────────────────────────────────────────────────────────────
@@ -737,7 +794,7 @@ function buildLegend(){
 }
 
 // ─── Tooltip ──────────────────────────────────────────────────────────────────
-function showStaticTT(event,d,deg,linkSel,nodeG,adj){
+function showStaticTT(event,d,deg,nodeG,adj){
   const wrap=document.getElementById('mapWrap'); if(!wrap) return;
   const r=wrap.getBoundingClientRect();
   const tt=document.getElementById('mapTooltip'); if(!tt) return;
