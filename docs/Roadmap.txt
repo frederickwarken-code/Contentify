@@ -1,4 +1,4 @@
-Aktueller Fokus: **Modularisierung** — **Kanban** `kanban.js`, **Import/Export** `import-export.js`, **Map** `map.js` (✅ ausgelagert). **Nächster Schritt:** **Drawer** aus `app.js` auslagern (bewusst nach Map). Multi-Tab/Auth-Fix bleibt die Basis; bei neuen Bugs Debug-Sektion unten.
+Aktueller Fokus: **Modularisierung** — **Map** `map.js` ist ausgelagert und Feinschliff (Zoom bei Preset/Farbwechsel, Pfeile am Kreisrand) ist drin. **Nächste Session:** **Drawer** aus `app.js` nach `drawer.js` (o. ä.) auslagern — wie geplant nach Map/Kanban/Import-Export. Multi-Tab/Auth-Fix bleibt die Basis; bei neuen Bugs Debug-Sektion unten.
 
 --- Debug-Handoff Multi-Tab / Sync ---
 
@@ -70,7 +70,8 @@ Nächste Schritte (Stand Modularisierung, technisch):
   - ✅ **Tabelle:** `src/app/table.js` + `field-normalize.js` (Auswahlwerte); `src/app.js` bindet `setTableAppHooks` (Daten, Sortierung, Bulk-Flag, `itemToRow`, Drawer).
   - ✅ **Kanban:** `src/app/kanban.js`; `setKanbanHooks` (u. a. `openDrawer`, `isIdea`).
   - ✅ **Import/Export:** `src/app/import-export.js`; `setImportExportHooks` (Daten, `itemToRow`, `loadData`, `isIdea`, Tab-Sync). Datum-Import: deutsch `TT.MM.JJJJ` → ISO; neue Kategorie-Optionen aus Import möglich.
-  - ⏭ **Nächster Modularisierungs-Schritt:** **Map** (d3/Simulation) aus `app.js`. **Drawer** später.
+  - ✅ **Map:** `src/app/map.js` (d3/Simulation, Presets, Zoom, Kanten); `setMapHooks` in `app.js` (Filter, `colorMode`, `hiddenCats`, `render`, …).
+  - ⏭ **Nächster Modularisierungs-Schritt:** **Drawer** (Overlay, Formular, Speichern/Löschen) aus `app.js`.
   - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Kanban/Map/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
 5. Langfristig: `attachInlineHandlers`/`window` durch direkte Event-Listener ersetzen wo möglich.
