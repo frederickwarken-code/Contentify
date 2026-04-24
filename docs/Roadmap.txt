@@ -1,4 +1,4 @@
-Aktueller Fokus: **Modularisierung** — **Map** `map.js` ist ausgelagert und Feinschliff (Zoom bei Preset/Farbwechsel, Pfeile am Kreisrand) ist drin. **Nächste Session:** **Drawer** aus `app.js` nach `drawer.js` (o. ä.) auslagern — wie geplant nach Map/Kanban/Import-Export. Multi-Tab/Auth-Fix bleibt die Basis; bei neuen Bugs Debug-Sektion unten.
+﻿Aktueller Fokus: **Modularisierung** — **Map** und **Drawer** sind ausgelagert (`map.js`, `drawer.js`) und funktionieren. **Nächste Session:** `attachInlineHandlers` schrittweise abbauen (Inline-`onclick` → `addEventListener`/Delegation). Multi-Tab/Auth-Fix bleibt die Basis; bei neuen Bugs Debug-Sektion unten.
 
 --- Debug-Handoff Multi-Tab / Sync ---
 
@@ -71,10 +71,10 @@ Nächste Schritte (Stand Modularisierung, technisch):
   - ✅ **Kanban:** `src/app/kanban.js`; `setKanbanHooks` (u. a. `openDrawer`, `isIdea`).
   - ✅ **Import/Export:** `src/app/import-export.js`; `setImportExportHooks` (Daten, `itemToRow`, `loadData`, `isIdea`, Tab-Sync). Datum-Import: deutsch `TT.MM.JJJJ` → ISO; neue Kategorie-Optionen aus Import möglich.
   - ✅ **Map:** `src/app/map.js` (d3/Simulation, Presets, Zoom, Kanten); `setMapHooks` in `app.js` (Filter, `colorMode`, `hiddenCats`, `render`, …).
-  - ⏭ **Nächster Modularisierungs-Schritt:** **Drawer** (Overlay, Formular, Speichern/Löschen) aus `app.js`.
+  - ✅ **Drawer:** `src/app/drawer.js` (Overlay, Formular, Speichern/Löschen, Link-/PotLink-Handling); `setDrawerHooks` in `app.js` (Datenzugriff, Render, Save/Reload, Tab-Sync).
   - Hinweis: Früher `data-pipeline` komplett + Realtime hatte Nebenwirkungen; deshalb nur inkrementell und nach Änderungen testen (`npm run build`, kurz Tabelle/Kanban/Map/Drawer/Speichern).
 4. ⏭ **Spalten / Kategorien** (load/save/sync + Modal) — eigenes Thema.
-5. Langfristig: `attachInlineHandlers`/`window` durch direkte Event-Listener ersetzen wo möglich.
+5. ⏭ Nächste Session: `attachInlineHandlers`/`window` in kleinen Schritten reduzieren (Inline-`onclick` durch direkte Listener ersetzen). Beim Start kurz in einfachen Worten erklären, warum das nötig ist.
 
 Test nach Änderungen: lokal `npm run dev` unter `/Contentify/` + Deploy prüfen.
 
